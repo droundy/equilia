@@ -1,0 +1,19 @@
+[package]
+name = "equilia"
+version = "0.1.0"
+edition = "2021"
+authors = ["David Roundy <daveroundy@gmail.com>"]
+
+description = "Columnar data store"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/droundy/equilia"
+
+readme = "README.md"
+
+[dependencies]
+
+internment = "0.7.0"
+
+[dev-dependencies]
+
+expect-test = "1.4.0"

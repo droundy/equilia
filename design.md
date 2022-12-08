@@ -1,18 +1,91 @@
 # Design principles
 
-**Fully columnar storage**  Columns are single large files within a directory structure that defines tables etc. Most columns will include run length encoding, and the primitive behavior of a column is iteration from an offset, no random access.
+<details>
+<summary><strong>Fully columnar storage</strong>
+Columns are single large files within a directory structure that defines tables
+etc. Most columns will include run length encoding, and the primitive behavior
+of a column is iteration from an offset, no random access.
+</summary>
 
-**Databases and inserts/mutations are isomorphic**  An insert/mutation will be a directory with a set of tables in it to be merged, just like a database.  The wire protocol (when it exists) will send something like a zip file of this directory structure.  This will enable a transaction to be represented as a single insertion since all changes to tables (no plans for alter) can be represented as insertions.
+This is the primary feature that makes clickhouse so fast for some kinds of queries.  It
+also makes adding a column to a table a pretty easy and efficient process (not that it *needs* to be).
+</details>
 
-**The client is thick.**  Network protocol will assume that the client does a fair amount of work, so the client will have to run our rust library.  This will increase the efficiency of the server and reduce network bandwidth at the cost of client CPU time.  Joins will be done on the client if at all (See client library).  If SQL is ever supported, it will be parsed in the client.
+<details>
+<summary><strong>Databases and inserts/mutations are isomorphic</strong>
+An insert/mutation will be a directory with a set of tables in it to be merged,
+just like a database.  The wire protocol (when it exists) will send something
+like a zip file of this directory structure.  This will enable a transaction to
+be represented as a single insertion since all changes to tables (no plans for
+alter) can be represented as insertions.
+</summary>
 
-By the same token, we can have both sharding and replication done on the client rather than the server.  For cases where the client-server network connection is much slower than the server-server connection, we could introduce server-side replication, but let’s start by assuming that the client is well connected.  This allows us to simplify the server. We also may want server-side replication (and maybe even sharding) in order to enforce an ordering of inserts, if we add non-commutative inserts (e.g. true deletes).
+This is a key feature and bears some discussion.
+</details>
 
-All table mutations are commutative and associative (for now).  All mutations have a merge result that is independent of the order of insertions or merges, to ease the consistency of replication.  This means deletes must either delete a single row (and then they vanish) or must persist indefinitely (but could be merged into larger contiguous blocks).  There could be an offline vacuum operation that deletes the deletes themselves, which would not be commutative.
+<details>
+<summary><strong>All table mutations are commutative and associative (for now).</strong>
+All mutations have a merge result that is independent of the order of insertions
+or merges, to ease the consistency of replication.  This has some annoying
+implications for deletes, but is huge in terms of the correctness of
+replication, since it means that inserts into different replicas need not be
+coordinated.
+</summary>
 
-**Split logical columns** Transformations of column types, e.g. dates and splitting a logical column into two that are at different places in the order e.g. partition by month.  So most significant bits earlier in the sort, for instance.
+Because mutations are associative and commutative, we can have uncoordinated
+writers inserting into replicas without suffering from race conditions, even if
+two replicas are disconnected with each other for a long period of time.
 
-**Aggregating columns** All columns are either in the primary order sequence, or are "aggregating columns" which have specific behavior when identical primary keys are encountered.
+This feature is present in clickhouse for some `MergeTree` engines, but not for others, which
+has annoying implications in terms of ease of use.
+</details>
+
+<details>
+<summary><strong>The client is thick.</strong>
+
+Network protocol will assume that the client does a fair amount of work, so the
+client will have to run our rust library.  This will increase the efficiency of
+the server and reduce network bandwidth at the cost of client CPU time.  Joins
+will be done on the client if at all (See client library).  If SQL is ever
+supported, it will be parsed in the client.
+
+By the same token, we can have both sharding and replication done on the client
+rather than the server.  For cases where the client-server network connection is
+much slower than the server-server connection, we could introduce server-side
+replication, but let’s start by assuming that the client is well connected.
+This allows us to simplify the server.  We probably will eventually want server-side
+replication (and maybe even sharding) in order to better cope with clients that
+crash before finishing insertions into all replicas.  But we can postpone this,
+and the replication protocol can be essentially identical (if not actually identical)
+to the insertion protocol.
+</summary>
+
+Note that doing replication on the client is made possible because insertions are
+commutative, which means that there is not a race condition between multiple clients
+that might be inserting into multiple replicas in different orders.
+</details>
+
+<details>
+<summary><strong>Split logical columns (minor feature)</strong>
+
+Transformations of column types, e.g. dates and splitting a logical column into
+two that are at different places in the order e.g. partition by month.  So most
+significant bits earlier in the sort, for instance.
+</summary>
+</details>
+
+<details>
+<summary><strong>Aggregating columns</strong>
+
+All columns are either in the primary order sequence, or are "aggregating
+columns" which have specific behavior when identical primary keys are
+encountered, such as summing, computing max or min, or "replacing".
+</summary>
+
+These aggregating columns will enable the functionality present in the many
+different clickhouse `MergeTree` engines plus more (e.g. tracking the first
+and last values of a column).
+</details>
 
 ## Functions and structs to create
 

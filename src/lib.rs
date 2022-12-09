@@ -57,8 +57,9 @@ impl FromIterator<RawValue> for RawRow {
 
 /// The type of a column.
 ///
-/// This is a logical type, which will be stored as one or
-/// more [`RawKind`] columns.
+/// This is a logical type, which will be stored as one or more [`RawKind`]
+/// columns.  We use the name "kind" for types for the convenience of not using
+/// a reserved keyword.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Kind {
     /// A 64-bit integer

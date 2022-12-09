@@ -64,7 +64,7 @@ impl std::fmt::Display for Table {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Table {}", self.name)?;
         for c in self.primary.iter() {
-            writeln!(f, "{:20} {:?}", c.name, c.ty)?;
+            writeln!(f, "{}: {:?}", c.name, c.ty)?;
         }
         Ok(())
     }
@@ -80,15 +80,15 @@ fn format_table() {
                 ty: Type::DateTime,
             },
             Column {
-                name: Intern::from("date"),
-                ty: Type::DateTime,
+                name: Intern::from("name"),
+                ty: Type::String,
             },
         ],
     };
     let expected = expect_test::expect![[r#"
         Table my-table
-        date                 DateTime
-        date                 DateTime
+        date: DateTime
+        name: String
     "#]];
     expected.assert_eq(table.to_string().as_str());
 }

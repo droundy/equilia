@@ -10,14 +10,14 @@ fn main() -> Result<(), std::io::Error> {
     println!("welcome to equilia client.");
 
     // TODO: handle connection :)
-    
+
     loop {
         print!("equilia > ");
         std::io::stdout().flush().unwrap();
         let mut buffer = String::new();
         std::io::stdin().read_line(&mut buffer)?;
         let b = buffer.trim();
-        
+
         if "exit".eq(b) || "quit".eq(b) {
             break;
         }

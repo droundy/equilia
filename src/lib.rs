@@ -5,12 +5,12 @@ use internment::Intern;
 
 /// The type of data actually stored in a column.
 ///
-/// This is in distinction from a logical [`Type`], which might
+/// This is in distinction from a logical [`Kind`], which might
 /// perform some transformation on the raw type, such as a
-/// `DateTime` that might be stored as a `RawType::U64` of
+/// `DateTime` that might be stored as a `RawKind::U64` of
 /// seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum RawType {
+pub enum RawKind {
     /// A 64-bit integer
     U64,
     /// A boolean value
@@ -19,12 +19,34 @@ pub enum RawType {
     Bytes,
 }
 
+/// A value that could exist in a column
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum RawValue {
+    /// A `u64` value
+    U64(u64),
+    /// A boolean value
+    Bool(bool),
+    /// A bytes value
+    Bytes(Vec<u8>),
+}
+
+impl RawValue {
+    /// The `RawKind` of this value
+    pub fn kind(&self) -> RawKind {
+        match self {
+            RawValue::Bool(_) => RawKind::Bool,
+            RawValue::U64(_) => RawKind::U64,
+            RawValue::Bytes(_) => RawKind::Bytes,
+        }
+    }
+}
+
 /// The type of a column.
 ///
 /// This is a logical type, which will be stored as one or
-/// more [`RawType`] columns.
+/// more [`RawKind`] columns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Type {
+pub enum Kind {
     /// A 64-bit integer
     U64,
     /// A boolean value
@@ -38,7 +60,7 @@ pub enum Type {
     /// The most significant value of a split column
     Split {
         /// The type of this column
-        ty: Intern<Type>,
+        kind: Intern<Kind>,
         /// The number represented by this column
         units: u64,
         /// The units of the next larger column
@@ -50,7 +72,7 @@ pub enum Type {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnSchema {
     name: Intern<str>,
-    ty: Type,
+    kind: Kind,
 }
 
 /// A table schema
@@ -64,7 +86,7 @@ impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Table {}", self.name)?;
         for c in self.primary.iter() {
-            writeln!(f, "{}: {:?}", c.name, c.ty)?;
+            writeln!(f, "{}: {:?}", c.name, c.kind)?;
         }
         Ok(())
     }
@@ -77,11 +99,11 @@ fn format_table() {
         primary: vec![
             ColumnSchema {
                 name: Intern::from("date"),
-                ty: Type::DateTime,
+                kind: Kind::DateTime,
             },
             ColumnSchema {
                 name: Intern::from("name"),
-                ty: Type::String,
+                kind: Kind::String,
             },
         ],
     };

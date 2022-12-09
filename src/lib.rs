@@ -48,7 +48,7 @@ pub enum Type {
 
 /// A column schema
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Column {
+pub struct ColumnSchema {
     name: Intern<str>,
     ty: Type,
 }
@@ -57,7 +57,7 @@ pub struct Column {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Table {
     name: Intern<str>,
-    primary: Vec<Column>,
+    primary: Vec<ColumnSchema>,
 }
 
 impl std::fmt::Display for Table {
@@ -75,11 +75,11 @@ fn format_table() {
     let table = Table {
         name: Intern::from("my-table"),
         primary: vec![
-            Column {
+            ColumnSchema {
                 name: Intern::from("date"),
                 ty: Type::DateTime,
             },
-            Column {
+            ColumnSchema {
                 name: Intern::from("name"),
                 ty: Type::String,
             },

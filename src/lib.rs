@@ -41,6 +41,20 @@ impl RawValue {
     }
 }
 
+/// A "raw" row, as it will be sorted and stored.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct RawRow {
+    values: Vec<RawValue>,
+}
+
+impl FromIterator<RawValue> for RawRow {
+    fn from_iter<T: IntoIterator<Item = RawValue>>(iter: T) -> Self {
+        RawRow {
+            values: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// The type of a column.
 ///
 /// This is a logical type, which will be stored as one or

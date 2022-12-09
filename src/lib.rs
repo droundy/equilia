@@ -55,12 +55,12 @@ pub struct ColumnSchema {
 
 /// A table schema
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Table {
+pub struct TableSchema {
     name: Intern<str>,
     primary: Vec<ColumnSchema>,
 }
 
-impl std::fmt::Display for Table {
+impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Table {}", self.name)?;
         for c in self.primary.iter() {
@@ -72,7 +72,7 @@ impl std::fmt::Display for Table {
 
 #[test]
 fn format_table() {
-    let table = Table {
+    let table = TableSchema {
         name: Intern::from("my-table"),
         primary: vec![
             ColumnSchema {

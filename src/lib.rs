@@ -101,10 +101,11 @@ pub enum Kind {
 }
 
 /// A column schema
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnSchema {
     name: Intern<str>,
     kind: Kind,
+    default: RawValue, // Should be a Value but I'm short on time to create that type.
 }
 
 /// A kind of column to aggregate
@@ -126,6 +127,28 @@ pub struct TableSchema {
     aggregation: BTreeSet<AggregatingSchema>,
 }
 
+impl std::fmt::Display for RawValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RawValue::Bool(b) => write!(f, "{b:?}"),
+            RawValue::U64(n) => write!(f, "{n}"),
+            RawValue::FixedBytes(x) | RawValue::Bytes(x) => {
+                if let Ok(s) = std::str::from_utf8(x) {
+                    write!(f, "'{s}'")
+                } else {
+                    write!(f, "{x:?}")
+                }
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for ColumnSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {:?} DEFAULT {}", self.name, self.kind, self.default)
+    }
+}
+
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CREATE TABLE {} {{", self.name)?;
@@ -135,19 +158,19 @@ impl std::fmt::Display for TableSchema {
         for a in self.aggregation.iter() {
             match a {
                 AggregatingSchema::Max(v) => {
-                    writeln!(f, "    {} {:?} MAX,", v[0].name, v[0].kind)?;
+                    writeln!(f, "    {} MAX,", v[0])?;
                     for c in v[1..].iter() {
-                        writeln!(f, "          {} {:?},", c.name, c.kind)?;
+                        writeln!(f, "          {c}")?;
                     }
                 }
                 AggregatingSchema::Min(v) => {
-                    writeln!(f, "    {} {:?} MIN,", v[0].name, v[0].kind)?;
+                    writeln!(f, "    {} MIN,", v[0])?;
                     for c in v[1..].iter() {
-                        writeln!(f, "          {} {:?},", c.name, c.kind)?;
+                        writeln!(f, "          {c},")?;
                     }
                 }
                 AggregatingSchema::Sum(c) => {
-                    writeln!(f, "    {} {:?} SUM,", c.name, c.kind)?;
+                    writeln!(f, "    {c} SUM,")?;
                 }
             }
         }
@@ -163,10 +186,12 @@ pub fn table_schema_schema() -> TableSchema {
             ColumnSchema {
                 name: Intern::from("table_id"),
                 kind: Kind::Uuid,
+                default: RawValue::FixedBytes(vec![0; 16]),
             },
             ColumnSchema {
                 name: Intern::from("column_id"),
                 kind: Kind::Uuid,
+                default: RawValue::FixedBytes(vec![0; 16]),
             },
         ],
         aggregation: [
@@ -174,19 +199,23 @@ pub fn table_schema_schema() -> TableSchema {
                 ColumnSchema {
                     name: Intern::from("modified"),
                     kind: Kind::DateTime,
+                    default: RawValue::U64(0),
                 },
                 ColumnSchema {
                     name: Intern::from("name"),
                     kind: Kind::String,
+                    default: RawValue::Bytes(Vec::new()),
                 },
                 ColumnSchema {
                     name: Intern::from("deleted"),
                     kind: Kind::Deleted,
+                    default: RawValue::Bool(false),
                 },
             ]),
             AggregatingSchema::Min(vec![ColumnSchema {
                 name: Intern::from("created"),
                 kind: Kind::DateTime,
+                default: RawValue::U64(0),
             }]),
         ]
         .into_iter()
@@ -201,25 +230,30 @@ pub fn db_schema_schema() -> TableSchema {
         primary: vec![ColumnSchema {
             name: Intern::from("table_id"),
             kind: Kind::Uuid,
+            default: RawValue::U64(0),
         }],
         aggregation: [
             AggregatingSchema::Max(vec![
                 ColumnSchema {
                     name: Intern::from("modified"),
                     kind: Kind::DateTime,
+                    default: RawValue::U64(0),
                 },
                 ColumnSchema {
                     name: Intern::from("name"),
                     kind: Kind::String,
+                    default: RawValue::Bytes(Vec::new()),
                 },
                 ColumnSchema {
                     name: Intern::from("deleted"),
                     kind: Kind::Deleted,
+                    default: RawValue::Bool(false),
                 },
             ]),
             AggregatingSchema::Min(vec![ColumnSchema {
                 name: Intern::from("created"),
                 kind: Kind::DateTime,
+                default: RawValue::U64(0),
             }]),
         ]
         .into_iter()
@@ -233,10 +267,10 @@ fn format_db_tables() {
         CREATE TABLE __table_schemas__ {
             table_id Uuid,
             column_id Uuid,
-            modified DateTime MAX,
-                  name String,
-                  deleted Deleted,
-            created DateTime MIN,
+            modified DateTime DEFAULT 0 MAX,
+                  name String DEFAULT ''
+                  deleted Deleted DEFAULT false
+            created DateTime DEFAULT 0 MIN,
         }
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
@@ -244,10 +278,10 @@ fn format_db_tables() {
     let expected = expect_test::expect![[r#"
         CREATE TABLE __tables__ {
             table_id Uuid,
-            modified DateTime MAX,
-                  name String,
-                  deleted Deleted,
-            created DateTime MIN,
+            modified DateTime DEFAULT 0 MAX,
+                  name String DEFAULT ''
+                  deleted Deleted DEFAULT false
+            created DateTime DEFAULT 0 MIN,
         }
     "#]];
     expected.assert_eq(db_schema_schema().to_string().as_str());

@@ -1,53 +1,12 @@
 #![deny(missing_docs)]
 //! A nice columnar data store.
 
-use internment::Intern;
 use std::collections::BTreeSet;
 
 mod value;
 
-/// The type of data actually stored in a column.
-///
-/// This is in distinction from a logical [`Kind`], which might
-/// perform some transformation on the raw type, such as a
-/// `DateTime` that might be stored as a `RawKind::U64` of
-/// seconds.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum RawKind {
-    /// A 64-bit integer
-    U64,
-    /// A boolean value
-    Bool,
-    /// A sequence of bytes
-    Bytes,
-    /// A sequence of bytes with fixed length
-    FixedBytes(usize),
-}
-
-/// A value that could exist in a column
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum RawValue {
-    /// A `u64` value
-    U64(u64),
-    /// A boolean value
-    Bool(bool),
-    /// A bytes value
-    Bytes(Vec<u8>),
-    /// A bytes value with fixed length
-    FixedBytes(Vec<u8>),
-}
-
-impl RawValue {
-    /// The `RawKind` of this value
-    pub fn kind(&self) -> RawKind {
-        match self {
-            RawValue::Bool(_) => RawKind::Bool,
-            RawValue::U64(_) => RawKind::U64,
-            RawValue::Bytes(_) => RawKind::Bytes,
-            RawValue::FixedBytes(b) => RawKind::FixedBytes(b.len()),
-        }
-    }
-}
+use value::{ColumnId, RawValue, TableId};
+pub use value::{Kind, Value};
 
 /// A "raw" row, as it will be sorted and stored.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -63,74 +22,11 @@ impl FromIterator<RawValue> for RawRow {
     }
 }
 
-/// The type of a column.
-///
-/// This is a logical type, which will be stored as one or more [`RawKind`]
-/// columns.  We use the name "kind" for types for the convenience of not using
-/// a reserved keyword.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum Kind {
-    /// A 64-bit integer
-    U64,
-    /// A boolean value
-    Bool,
-    /// A sequence of bytes
-    Bytes,
-    /// A utf8-encoded string
-    String,
-    /// A date and time with 1-second resolution
-    DateTime,
-    /// A uuid
-    Uuid,
-    /// A boolean column that if true means the value is deleted
-    Deleted,
-    /// A DateTime column that indicates when a row should be deleted
-    TTL,
-    /// A column uuid
-    Column,
-    /// A table uuid
-    Table,
-    /// A portion of a split column
-    Split {
-        /// The type of this column
-        kind: Intern<Kind>,
-        /// The number represented by this column
-        units: u64,
-        /// The units of the next larger column
-        modulo: u64,
-    },
-}
-
-/// A logical value that has a Kind.
-pub enum Value {
-    /// A `u64` value
-    U64(u64),
-    /// A boolean value
-    Bool(bool),
-    /// A bytes value
-    Bytes(Vec<u8>),
-    /// A bytes value with fixed length
-    FixedBytes(Vec<u8>),
-}
-
-impl Value {
-    /// The `RawKind` of this value
-    pub fn kind(&self) -> RawKind {
-        match self {
-            Value::Bool(_) => RawKind::Bool,
-            Value::U64(_) => RawKind::U64,
-            Value::Bytes(_) => RawKind::Bytes,
-            Value::FixedBytes(b) => RawKind::FixedBytes(b.len()),
-        }
-    }
-}
-
 /// A column schema
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnSchema {
-    name: Intern<str>,
-    kind: Kind,
-    default: RawValue, // Should be a Value but I'm short on time to create that type.
+    id: ColumnId,
+    default: Value,
 }
 
 /// A kind of column to aggregate
@@ -147,30 +43,20 @@ pub enum AggregatingSchema {
 /// A table schema
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TableSchema {
-    name: Intern<str>,
+    id: TableId,
     primary: Vec<ColumnSchema>,
     aggregation: BTreeSet<AggregatingSchema>,
 }
 
-impl std::fmt::Display for RawValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RawValue::Bool(b) => write!(f, "{b:?}"),
-            RawValue::U64(n) => write!(f, "{n}"),
-            RawValue::FixedBytes(x) | RawValue::Bytes(x) => {
-                if let Ok(s) = std::str::from_utf8(x) {
-                    write!(f, "'{s}'")
-                } else {
-                    write!(f, "{x:?}")
-                }
-            }
-        }
-    }
-}
-
 impl std::fmt::Display for ColumnSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {:?} DEFAULT {}", self.name, self.kind, self.default)
+        write!(
+            f,
+            "{} {:?} DEFAULT {}",
+            self.id,
+            self.default.kind(),
+            self.default
+        )
     }
 }
 
@@ -199,9 +85,9 @@ fn column_list(
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
     if let Some(c) = v.first() {
-        write!(f, "    {keyword} ( {}", c.name)?;
+        write!(f, "    {keyword} ( {}", c.id)?;
         for c in v[1..].iter() {
-            write!(f, ", {}", c.name)?;
+            write!(f, ", {}", c.id)?;
         }
         writeln!(f, " ),")
     } else {
@@ -211,7 +97,7 @@ fn column_list(
 
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "CREATE TABLE {} {{", self.name)?;
+        writeln!(f, "CREATE TABLE {} {{", self.id)?;
         for c in self.columns() {
             writeln!(f, "    {c},")?;
         }
@@ -230,41 +116,35 @@ impl std::fmt::Display for TableSchema {
 /// The schema of the tables of tables
 pub fn table_schema_schema() -> TableSchema {
     TableSchema {
-        name: Intern::from("__table_schemas__"),
+        id: TableId::from(b"__table_schemas_"),
         primary: vec![
             ColumnSchema {
-                name: Intern::from("table_id"),
-                kind: Kind::Uuid,
-                default: RawValue::FixedBytes(vec![0; 16]),
+                id: ColumnId::from(b"table_id--tables"),
+                default: Value::Column(ColumnId::from(b"TABLE--NOT-EXIST")),
             },
             ColumnSchema {
-                name: Intern::from("column_id"),
-                kind: Kind::Uuid,
-                default: RawValue::FixedBytes(vec![0; 16]),
+                id: ColumnId::from(b"column_id-tables"),
+                default: Value::Column(ColumnId::from(b"COLUMN-NOT-EXIST")),
             },
         ],
         aggregation: [
             AggregatingSchema::Max(vec![
                 ColumnSchema {
-                    name: Intern::from("modified"),
-                    kind: Kind::DateTime,
-                    default: RawValue::U64(0),
+                    id: ColumnId::from(b"modified-column!"),
+                    default: Value::U64(0), // FIXME datetime
                 },
                 ColumnSchema {
-                    name: Intern::from("name"),
-                    kind: Kind::String,
-                    default: RawValue::Bytes(Vec::new()),
+                    id: ColumnId::from(b"name-of-column!!"),
+                    default: Value::Bytes(Vec::new()),
                 },
                 ColumnSchema {
-                    name: Intern::from("deleted"),
-                    kind: Kind::Deleted,
-                    default: RawValue::Bool(false),
+                    id: ColumnId::from(b"column-isdeleted"),
+                    default: Value::Bool(false),
                 },
             ]),
             AggregatingSchema::Min(vec![ColumnSchema {
-                name: Intern::from("created"),
-                kind: Kind::DateTime,
-                default: RawValue::U64(0),
+                id: ColumnId::from(b"columnwascreated"),
+                default: Value::U64(0),
             }]),
         ]
         .into_iter()
@@ -275,34 +155,29 @@ pub fn table_schema_schema() -> TableSchema {
 /// The schema of the tables of tables
 pub fn db_schema_schema() -> TableSchema {
     TableSchema {
-        name: Intern::from("__tables__"),
+        id: TableId::from(b"__tables_in_db__"),
         primary: vec![ColumnSchema {
-            name: Intern::from("table_id"),
-            kind: Kind::Uuid,
-            default: RawValue::U64(0),
+            id: ColumnId::from(b"table_id-in-db!!"),
+            default: Value::U64(0),
         }],
         aggregation: [
             AggregatingSchema::Max(vec![
                 ColumnSchema {
-                    name: Intern::from("modified"),
-                    kind: Kind::DateTime,
-                    default: RawValue::U64(0),
+                    id: ColumnId::from(b"MODIFIED-TABLE.."),
+                    default: Value::U64(0),
                 },
                 ColumnSchema {
-                    name: Intern::from("name"),
-                    kind: Kind::String,
-                    default: RawValue::Bytes(Vec::new()),
+                    id: ColumnId::from(b"name-of-table..."),
+                    default: Value::Bytes(Vec::new()),
                 },
                 ColumnSchema {
-                    name: Intern::from("deleted"),
-                    kind: Kind::Deleted,
-                    default: RawValue::Bool(false),
+                    id: ColumnId::from(b"table-is-deleted"),
+                    default: Value::Bool(false),
                 },
             ]),
             AggregatingSchema::Min(vec![ColumnSchema {
-                name: Intern::from("created"),
-                kind: Kind::DateTime,
-                default: RawValue::U64(0),
+                id: ColumnId::from(b"table-wascreated"),
+                default: Value::U64(0),
             }]),
         ]
         .into_iter()
@@ -313,30 +188,30 @@ pub fn db_schema_schema() -> TableSchema {
 #[test]
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        CREATE TABLE __table_schemas__ {
-            table_id Uuid DEFAULT '                ',
-            column_id Uuid DEFAULT '                ',
-            modified DateTime DEFAULT 0,
-            name String DEFAULT '',
-            deleted Deleted DEFAULT false,
-            created DateTime DEFAULT 0,
-            PRIMARY KEY ( table_id, column_id ),
-            MAX ( modified, name, deleted ),
-            MIN ( created ),
+        CREATE TABLE Table('__table_schemas_') {
+            Column('table_id--tables') FixedBytes(16) DEFAULT Column('TABLE--NOT-EXIST'),
+            Column('column_id-tables') FixedBytes(16) DEFAULT Column('COLUMN-NOT-EXIST'),
+            Column('modified-column!') U64 DEFAULT 0,
+            Column('name-of-column!!') Bytes DEFAULT '',
+            Column('column-isdeleted') Bool DEFAULT false,
+            Column('columnwascreated') U64 DEFAULT 0,
+            PRIMARY KEY ( Column('table_id--tables'), Column('column_id-tables') ),
+            MAX ( Column('modified-column!'), Column('name-of-column!!'), Column('column-isdeleted') ),
+            MIN ( Column('columnwascreated') ),
         };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
 
     let expected = expect_test::expect![[r#"
-        CREATE TABLE __tables__ {
-            table_id Uuid DEFAULT 0,
-            modified DateTime DEFAULT 0,
-            name String DEFAULT '',
-            deleted Deleted DEFAULT false,
-            created DateTime DEFAULT 0,
-            PRIMARY KEY ( table_id ),
-            MAX ( modified, name, deleted ),
-            MIN ( created ),
+        CREATE TABLE Table('__tables_in_db__') {
+            Column('table_id-in-db!!') U64 DEFAULT 0,
+            Column('MODIFIED-TABLE..') U64 DEFAULT 0,
+            Column('name-of-table...') Bytes DEFAULT '',
+            Column('table-is-deleted') Bool DEFAULT false,
+            Column('table-wascreated') U64 DEFAULT 0,
+            PRIMARY KEY ( Column('table_id-in-db!!') ),
+            MAX ( Column('MODIFIED-TABLE..'), Column('name-of-table...'), Column('table-is-deleted') ),
+            MIN ( Column('table-wascreated') ),
         };
     "#]];
     expected.assert_eq(db_schema_schema().to_string().as_str());

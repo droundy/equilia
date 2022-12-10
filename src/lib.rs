@@ -1,6 +1,8 @@
 #![deny(missing_docs)]
 //! A nice columnar data store.
 
+use std::collections::BTreeSet;
+
 use internment::Intern;
 
 /// The type of data actually stored in a column.
@@ -17,6 +19,8 @@ pub enum RawKind {
     Bool,
     /// A sequence of bytes
     Bytes,
+    /// A sequence of bytes with fixed length
+    FixedBytes(usize),
 }
 
 /// A value that could exist in a column
@@ -28,6 +32,8 @@ pub enum RawValue {
     Bool(bool),
     /// A bytes value
     Bytes(Vec<u8>),
+    /// A bytes value with fixed length
+    FixedBytes(Vec<u8>),
 }
 
 impl RawValue {
@@ -37,6 +43,7 @@ impl RawValue {
             RawValue::Bool(_) => RawKind::Bool,
             RawValue::U64(_) => RawKind::U64,
             RawValue::Bytes(_) => RawKind::Bytes,
+            RawValue::FixedBytes(b) => RawKind::FixedBytes(b.len()),
         }
     }
 }
@@ -72,7 +79,17 @@ pub enum Kind {
     String,
     /// A date and time with 1-second resolution
     DateTime,
-    /// The most significant value of a split column
+    /// A uuid
+    Uuid,
+    /// A boolean column that if true means the value is deleted
+    Deleted,
+    /// A DateTime column that indicates when a row should be deleted
+    TTL,
+    /// A column uuid
+    Column,
+    /// A table uuid
+    Table,
+    /// A portion of a split column
     Split {
         /// The type of this column
         kind: Intern<Kind>,
@@ -90,42 +107,148 @@ pub struct ColumnSchema {
     kind: Kind,
 }
 
+/// A kind of column to aggregate
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum AggregatingSchema {
+    /// One or more columns, we pick the max of a pair
+    Max(Vec<ColumnSchema>),
+    /// One or more columns, we pick the min of a pair
+    Min(Vec<ColumnSchema>),
+    /// Summing
+    Sum(ColumnSchema),
+}
+
 /// A table schema
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TableSchema {
     name: Intern<str>,
     primary: Vec<ColumnSchema>,
+    aggregation: BTreeSet<AggregatingSchema>,
 }
 
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Table {}", self.name)?;
+        writeln!(f, "CREATE TABLE {} {{", self.name)?;
         for c in self.primary.iter() {
-            writeln!(f, "{}: {:?}", c.name, c.kind)?;
+            writeln!(f, "    {} {:?},", c.name, c.kind)?;
         }
-        Ok(())
+        for a in self.aggregation.iter() {
+            match a {
+                AggregatingSchema::Max(v) => {
+                    writeln!(f, "    {} {:?} MAX,", v[0].name, v[0].kind)?;
+                    for c in v[1..].iter() {
+                        writeln!(f, "          {} {:?},", c.name, c.kind)?;
+                    }
+                }
+                AggregatingSchema::Min(v) => {
+                    writeln!(f, "    {} {:?} MIN,", v[0].name, v[0].kind)?;
+                    for c in v[1..].iter() {
+                        writeln!(f, "          {} {:?},", c.name, c.kind)?;
+                    }
+                }
+                AggregatingSchema::Sum(c) => {
+                    writeln!(f, "    {} {:?} SUM,", c.name, c.kind)?;
+                }
+            }
+        }
+        writeln!(f, "}}")
+    }
+}
+
+/// The schema of the tables of tables
+pub fn table_schema_schema() -> TableSchema {
+    TableSchema {
+        name: Intern::from("__table_schemas__"),
+        primary: vec![
+            ColumnSchema {
+                name: Intern::from("table_id"),
+                kind: Kind::Uuid,
+            },
+            ColumnSchema {
+                name: Intern::from("column_id"),
+                kind: Kind::Uuid,
+            },
+        ],
+        aggregation: [
+            AggregatingSchema::Max(vec![
+                ColumnSchema {
+                    name: Intern::from("modified"),
+                    kind: Kind::DateTime,
+                },
+                ColumnSchema {
+                    name: Intern::from("name"),
+                    kind: Kind::String,
+                },
+                ColumnSchema {
+                    name: Intern::from("deleted"),
+                    kind: Kind::Deleted,
+                },
+            ]),
+            AggregatingSchema::Min(vec![ColumnSchema {
+                name: Intern::from("created"),
+                kind: Kind::DateTime,
+            }]),
+        ]
+        .into_iter()
+        .collect(),
+    }
+}
+
+/// The schema of the tables of tables
+pub fn db_schema_schema() -> TableSchema {
+    TableSchema {
+        name: Intern::from("__tables__"),
+        primary: vec![ColumnSchema {
+            name: Intern::from("table_id"),
+            kind: Kind::Uuid,
+        }],
+        aggregation: [
+            AggregatingSchema::Max(vec![
+                ColumnSchema {
+                    name: Intern::from("modified"),
+                    kind: Kind::DateTime,
+                },
+                ColumnSchema {
+                    name: Intern::from("name"),
+                    kind: Kind::String,
+                },
+                ColumnSchema {
+                    name: Intern::from("deleted"),
+                    kind: Kind::Deleted,
+                },
+            ]),
+            AggregatingSchema::Min(vec![ColumnSchema {
+                name: Intern::from("created"),
+                kind: Kind::DateTime,
+            }]),
+        ]
+        .into_iter()
+        .collect(),
     }
 }
 
 #[test]
-fn format_table() {
-    let table = TableSchema {
-        name: Intern::from("my-table"),
-        primary: vec![
-            ColumnSchema {
-                name: Intern::from("date"),
-                kind: Kind::DateTime,
-            },
-            ColumnSchema {
-                name: Intern::from("name"),
-                kind: Kind::String,
-            },
-        ],
-    };
+fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        Table my-table
-        date: DateTime
-        name: String
+        CREATE TABLE __table_schemas__ {
+            table_id Uuid,
+            column_id Uuid,
+            modified DateTime MAX,
+                  name String,
+                  deleted Deleted,
+            created DateTime MIN,
+        }
     "#]];
-    expected.assert_eq(table.to_string().as_str());
+    expected.assert_eq(table_schema_schema().to_string().as_str());
+
+    let expected = expect_test::expect![[r#"
+        CREATE TABLE __tables__ {
+            table_id Uuid,
+            modified DateTime MAX,
+                  name String,
+                  deleted Deleted,
+            created DateTime MIN,
+        }
+    "#]];
+    expected.assert_eq(db_schema_schema().to_string().as_str());
 }

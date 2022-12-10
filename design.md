@@ -107,6 +107,18 @@ different clickhouse `MergeTree` engines plus more (e.g. tracking the first
 and last values of a column).
 </details>
 
+## Patterns and anti-patterns
+
+With eventual consistency, there are some patterns to avoid.  They mostly
+involve reading prior to writing based on the data which was read and may have
+changed in the meantime.
+
+### Anti-pattern: Read whole row to change only part
+
+A tempting pattern would be to read an entire row so you could know the values
+you do not want to change.  The corresponding pattern would be to use separate
+`MAX` blocks for each set of columns you would like to update independently.
+
 ## Functions and structs to create
 
 1. `enum` for column types

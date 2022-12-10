@@ -1,9 +1,10 @@
 #![deny(missing_docs)]
 //! A nice columnar data store.
 
+use internment::Intern;
 use std::collections::BTreeSet;
 
-use internment::Intern;
+mod value;
 
 /// The type of data actually stored in a column.
 ///
@@ -100,6 +101,30 @@ pub enum Kind {
     },
 }
 
+/// A logical value that has a Kind.
+pub enum Value {
+    /// A `u64` value
+    U64(u64),
+    /// A boolean value
+    Bool(bool),
+    /// A bytes value
+    Bytes(Vec<u8>),
+    /// A bytes value with fixed length
+    FixedBytes(Vec<u8>),
+}
+
+impl Value {
+    /// The `RawKind` of this value
+    pub fn kind(&self) -> RawKind {
+        match self {
+            Value::Bool(_) => RawKind::Bool,
+            Value::U64(_) => RawKind::U64,
+            Value::Bytes(_) => RawKind::Bytes,
+            Value::FixedBytes(b) => RawKind::FixedBytes(b.len()),
+        }
+    }
+}
+
 /// A column schema
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnSchema {
@@ -116,7 +141,7 @@ pub enum AggregatingSchema {
     /// One or more columns, we pick the min of a pair
     Min(Vec<ColumnSchema>),
     /// Summing
-    Sum(ColumnSchema),
+    Sum([ColumnSchema; 1]),
 }
 
 /// A table schema
@@ -149,32 +174,56 @@ impl std::fmt::Display for ColumnSchema {
     }
 }
 
+impl AggregatingSchema {
+    fn columns(&self) -> impl Iterator<Item = &ColumnSchema> {
+        match self {
+            AggregatingSchema::Max(v) => v.iter(),
+            AggregatingSchema::Min(v) => v.iter(),
+            AggregatingSchema::Sum(c) => c.iter(),
+        }
+    }
+}
+
+impl TableSchema {
+    /// Iterate over the columns in the schema
+    pub fn columns(&self) -> impl Iterator<Item = &ColumnSchema> {
+        self.primary
+            .iter()
+            .chain(self.aggregation.iter().flat_map(|a| a.columns()))
+    }
+}
+
+fn column_list(
+    keyword: &str,
+    v: &[ColumnSchema],
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    if let Some(c) = v.first() {
+        write!(f, "    {keyword} ( {}", c.name)?;
+        for c in v[1..].iter() {
+            write!(f, ", {}", c.name)?;
+        }
+        writeln!(f, " ),")
+    } else {
+        Ok(())
+    }
+}
+
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CREATE TABLE {} {{", self.name)?;
-        for c in self.primary.iter() {
-            writeln!(f, "    {} {:?},", c.name, c.kind)?;
+        for c in self.columns() {
+            writeln!(f, "    {c},")?;
         }
+        column_list("PRIMARY KEY", &self.primary, f)?;
         for a in self.aggregation.iter() {
             match a {
-                AggregatingSchema::Max(v) => {
-                    writeln!(f, "    {} MAX,", v[0])?;
-                    for c in v[1..].iter() {
-                        writeln!(f, "          {c}")?;
-                    }
-                }
-                AggregatingSchema::Min(v) => {
-                    writeln!(f, "    {} MIN,", v[0])?;
-                    for c in v[1..].iter() {
-                        writeln!(f, "          {c},")?;
-                    }
-                }
-                AggregatingSchema::Sum(c) => {
-                    writeln!(f, "    {c} SUM,")?;
-                }
+                AggregatingSchema::Max(v) => column_list("MAX", v, f)?,
+                AggregatingSchema::Min(v) => column_list("MIN", v, f)?,
+                AggregatingSchema::Sum(c) => column_list("SUM", c, f)?,
             }
         }
-        writeln!(f, "}}")
+        writeln!(f, "}};")
     }
 }
 
@@ -265,24 +314,30 @@ pub fn db_schema_schema() -> TableSchema {
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
         CREATE TABLE __table_schemas__ {
-            table_id Uuid,
-            column_id Uuid,
-            modified DateTime DEFAULT 0 MAX,
-                  name String DEFAULT ''
-                  deleted Deleted DEFAULT false
-            created DateTime DEFAULT 0 MIN,
-        }
+            table_id Uuid DEFAULT '                ',
+            column_id Uuid DEFAULT '                ',
+            modified DateTime DEFAULT 0,
+            name String DEFAULT '',
+            deleted Deleted DEFAULT false,
+            created DateTime DEFAULT 0,
+            PRIMARY KEY ( table_id, column_id ),
+            MAX ( modified, name, deleted ),
+            MIN ( created ),
+        };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
 
     let expected = expect_test::expect![[r#"
         CREATE TABLE __tables__ {
-            table_id Uuid,
-            modified DateTime DEFAULT 0 MAX,
-                  name String DEFAULT ''
-                  deleted Deleted DEFAULT false
-            created DateTime DEFAULT 0 MIN,
-        }
+            table_id Uuid DEFAULT 0,
+            modified DateTime DEFAULT 0,
+            name String DEFAULT '',
+            deleted Deleted DEFAULT false,
+            created DateTime DEFAULT 0,
+            PRIMARY KEY ( table_id ),
+            MAX ( modified, name, deleted ),
+            MIN ( created ),
+        };
     "#]];
     expected.assert_eq(db_schema_schema().to_string().as_str());
 }

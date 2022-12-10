@@ -29,6 +29,8 @@ pub enum RawValue {
     FixedBytes(Vec<u8>),
 }
 
+const SEPARATOR: u8 = 0x1E;
+
 impl RawValue {
     /// The `RawKind` of this value
     pub fn kind(&self) -> RawKind {
@@ -38,6 +40,34 @@ impl RawValue {
             RawValue::Bytes(_) => RawKind::Bytes,
             RawValue::FixedBytes(b) => RawKind::FixedBytes(b.len()),
         }
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut v = vec![];
+        match self {
+            RawValue::U64(number) => {
+                v.push(0);
+                v.push(SEPARATOR);
+                v.extend(number.to_be_bytes());
+            }
+            RawValue::Bool(b) => {
+                v.push(1);
+                v.push(SEPARATOR);
+                v.push(*b as u8);
+            }
+            RawValue::Bytes(bytes) => {
+                v.push(2);
+                v.push(SEPARATOR);
+                v.extend(bytes);
+            }
+            RawValue::FixedBytes(bytes) => {
+                v.push(3);
+                v.push(SEPARATOR);
+                v.extend(bytes);
+            }
+        }
+
+        v
     }
 }
 
@@ -168,5 +198,50 @@ impl std::fmt::Display for Value {
             }
             Value::Column(x) => write!(f, "{x}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::RawValue;
+
+    #[test]
+    fn encode_bool() {
+        {
+            let value = RawValue::Bool(false);
+            let output = value.encode();
+            let expected = vec![1, 30, 0];
+            assert_eq!(expected, output);
+        }
+        {
+            let value = RawValue::Bool(true);
+            let output = value.encode();
+            let expected = vec![1, 30, 1];
+            assert_eq!(expected, output);
+        }
+    }
+
+    #[test]
+    fn encode_u64() {
+        let value = RawValue::U64(999_999_999);
+        let output = value.encode();
+        let expected = vec![0, 30, 0, 0, 0, 0, 59, 154, 201, 255];
+        assert_eq!(expected, output);
+    }
+
+    #[test]
+    fn encode_bytes() {
+        let value = RawValue::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+        let output = value.encode();
+        let expected = vec![2, 30, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+        assert_eq!(expected, output);
+    }
+
+    #[test]
+    fn encode_fixedbytes() {
+        let value = RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+        let output = value.encode();
+        let expected = vec![3, 30, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+        assert_eq!(expected, output);
     }
 }

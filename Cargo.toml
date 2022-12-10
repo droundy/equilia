@@ -13,7 +13,6 @@ readme = "README.md"
 [dependencies]
 
 [dev-dependencies]
-
 expect-test = "1.4.0"
 
 [[bin]]

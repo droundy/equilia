@@ -66,7 +66,7 @@ impl RawValue {
         v
     }
 
-    pub fn decode(data: Vec<u8>) -> Result<Self, std::io::Error> {
+    pub fn decode(data: &[u8]) -> Result<(Self, &[u8]), std::io::Error> {
         if data.is_empty() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
@@ -75,10 +75,21 @@ impl RawValue {
         }
 
         match data[0] {
-            0 => Ok(Self::U64(u64::from_be_bytes(data[1..].try_into().unwrap()))),
-            1 => Ok(Self::Bool(data[1] != 0)),
-            2 => Ok(Self::Bytes(data[2..].to_vec())),
-            3 => Ok(Self::FixedBytes(data[2..].to_vec())),
+            0 => Ok((
+                Self::U64(u64::from_be_bytes(data[1..].try_into().unwrap())),
+                &[],
+            )),
+            1 => Ok((Self::Bool(data[1] != 0), &[])),
+            2 => {
+                let len = data[1] as usize;
+                let bytes = data[2..2 + len].to_vec();
+                Ok((Self::Bytes(bytes), &data[2 + len..]))
+            }
+            3 => {
+                let len = data[1] as usize;
+                let bytes = data[2..2 + len].to_vec();
+                Ok((Self::FixedBytes(bytes), &data[2 + len..]))
+            }
             _ => unreachable!(),
         }
     }
@@ -238,15 +249,15 @@ mod test {
     fn decode_bool() {
         {
             let data = vec![1, 0];
-            let output = RawValue::decode(data).unwrap();
+            let output = RawValue::decode(&data).unwrap();
             let expected = RawValue::Bool(false);
-            assert_eq!(expected, output);
+            assert_eq!(expected, output.0);
         }
         {
             let data = vec![1, 1];
-            let output = RawValue::decode(data).unwrap();
+            let output = RawValue::decode(&data).unwrap();
             let expected = RawValue::Bool(true);
-            assert_eq!(expected, output);
+            assert_eq!(expected, output.0);
         }
     }
 
@@ -261,9 +272,9 @@ mod test {
     #[test]
     fn decode_u64() {
         let data = vec![0, 0, 0, 0, 0, 59, 154, 201, 255];
-        let output = RawValue::decode(data).unwrap();
+        let output = RawValue::decode(&data).unwrap();
         let expected = RawValue::U64(999_999_999);
-        assert_eq!(expected, output);
+        assert_eq!(expected, output.0);
     }
 
     #[test]
@@ -276,10 +287,21 @@ mod test {
 
     #[test]
     fn decode_bytes() {
-        let data = vec![2, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-        let output = RawValue::decode(data).unwrap();
-        let expected = RawValue::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
-        assert_eq!(expected, output);
+        {
+            let data = vec![2, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+            let output = RawValue::decode(&data).unwrap();
+            let expected = RawValue::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+            assert_eq!(expected, output.0);
+        }
+        {
+            let data = vec![2, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 9, 9, 9];
+            let output = RawValue::decode(&data).unwrap();
+            let expected = (
+                RawValue::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]),
+                &data[12..],
+            );
+            assert_eq!(expected, output);
+        }
     }
 
     #[test]
@@ -292,9 +314,20 @@ mod test {
 
     #[test]
     fn decode_fixedbytes() {
-        let data = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-        let output = RawValue::decode(data).unwrap();
-        let expected = RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
-        assert_eq!(expected, output);
+        {
+            let data = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+            let output = RawValue::decode(&data).unwrap();
+            let expected = RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
+            assert_eq!(expected, output.0);
+        }
+        {
+            let data = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 9, 9, 9];
+            let output = RawValue::decode(&data).unwrap();
+            let expected = (
+                RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]),
+                &data[12..],
+            );
+            assert_eq!(expected, output);
+        }
     }
 }

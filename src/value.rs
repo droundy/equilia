@@ -93,7 +93,7 @@ pub struct ColumnId([u8; 16]);
 impl std::fmt::Display for ColumnId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(s) = std::str::from_utf8(&self.0) {
-            write!(f, "Column('{s}')")
+            write!(f, "`{s}`")
         } else {
             write!(f, "Column({:?})", self.0)
         }

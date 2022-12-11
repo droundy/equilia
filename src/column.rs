@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 use crate::encoding::{read_u64, write_u64};
 
 /// A raw column
@@ -7,7 +9,7 @@ pub struct RawColumn {
     inner: RawColumnInner,
 }
 
-fn run_length_encode<T: PartialEq + Clone>(elems: &[T]) -> Vec<(T, usize)> {
+fn run_length_encode<T: PartialEq + Clone>(elems: &[T]) -> Vec<(T, u64)> {
     let mut out = Vec::new();
     if let Some(mut previous) = elems.first() {
         let mut count = 0;
@@ -42,21 +44,26 @@ impl From<&[bool]> for RawColumn {
 }
 
 impl RawColumn {
-    /// This isn't what we'll really want to use, but might be useful for testing?
+    /// This isn't what we'll really want to use, but might be useful for
+    /// testing?
+    ///
+    /// It also illustrates how some common logic can be abstracted away into a
+    /// helper function like the `column_to_vec` below.
     pub fn read_bools(&self) -> Result<Vec<bool>, ()> {
         match &self.inner {
-            RawColumnInner::Bool(b) => {
-                let mut out = Vec::new();
-                let mut b = b.clone();
-                while let Some((b, count, _)) = b.next(&self.bytes)? {
-                    for _ in 0..count {
-                        out.push(*b);
-                    }
-                }
-                Ok(out)
-            }
+            RawColumnInner::Bool(b) => column_to_vec(b, &self.bytes),
         }
     }
+}
+
+fn column_to_vec<T: Clone, C: IsRawColumn<T>>(column: &C, buf: &[u8]) -> Result<Vec<T>, ()> {
+    let mut out = Vec::new();
+    column.for_each(buf, |v, range| {
+        for _ in range {
+            out.push(v.clone());
+        }
+    })?;
+    Ok(out)
 }
 
 pub(crate) enum RawColumnInner {
@@ -80,7 +87,7 @@ pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
     /// of an in-memory buffer.
     ///
     /// Implementations may assume that two sequential T will not be equal.
-    fn encode(input: &[(T, usize)]) -> Vec<u8>;
+    fn encode(input: &[(T, u64)]) -> Vec<u8>;
 
     /// Decode a column into this type and and an offset to the first element
     ///
@@ -88,10 +95,21 @@ pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
     fn decode(buf: &[u8]) -> Result<(Self, Offset), ()>;
 
     /// Read the next chunk of identical elements, returning offset of next element
-    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a T, usize, Offset)>, ()>;
+    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a T, u64, Offset)>, ()>;
 
     /// Read the next chunk of identical elements, returning offset of next element
     fn skip(&mut self, elem: &T, offset: Offset);
+
+    /// Do something for each value in the column.
+    fn for_each(&self, buf: &[u8], mut f: impl FnMut(&T, Range<u64>)) -> Result<(), ()> {
+        let mut iter = self.clone();
+        let mut i = 0;
+        while let Some((v, count, _)) = iter.next(buf)? {
+            f(v, i..i + count as u64);
+            i += count as u64;
+        }
+        Ok(())
+    }
 }
 
 /// An offset into a Column
@@ -99,7 +117,7 @@ pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
 pub struct Offset(usize);
 
 impl IsRawColumn<bool> for BoolColumn {
-    fn encode(input: &[(bool, usize)]) -> Vec<u8> {
+    fn encode(input: &[(bool, u64)]) -> Vec<u8> {
         let mut bytes = Vec::new();
         if input.is_empty() {
             return bytes;
@@ -122,14 +140,14 @@ impl IsRawColumn<bool> for BoolColumn {
         ))
     }
 
-    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a bool, usize, Offset)>, ()> {
+    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a bool, u64, Offset)>, ()> {
         if buf.len() <= self.offset.0 {
             return Ok(None);
         }
         self.last = !self.last;
         let (count, newbuf) = read_u64(&buf[self.offset.0..])?;
         self.offset.0 += buf.len() - newbuf.len();
-        Ok(Some((&self.last, count as usize, self.offset)))
+        Ok(Some((&self.last, count, self.offset)))
     }
 
     fn skip(&mut self, elem: &bool, offset: Offset) {

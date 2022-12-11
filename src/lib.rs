@@ -3,8 +3,11 @@
 
 use std::collections::BTreeSet;
 
+mod column;
+mod encoding;
 mod value;
 
+pub use column::RawColumn;
 use value::{ColumnId, RawValue, TableId};
 pub use value::{Kind, Value};
 

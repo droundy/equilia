@@ -56,7 +56,7 @@ impl RawColumn {
     }
 }
 
-fn column_to_vec<T: Clone, C: IsRawColumn<T>>(column: &C, buf: &[u8]) -> Result<Vec<T>, ()> {
+fn column_to_vec<C: IsRawColumn>(column: &C, buf: &[u8]) -> Result<Vec<C::Element>, ()> {
     let mut out = Vec::new();
     column.for_each(buf, |v, range| {
         for _ in range {
@@ -80,14 +80,15 @@ pub(crate) struct BoolColumn {
 ///
 /// Note that this type doubles as a kind of iterator, but a weird one where the
 /// values are borrowed from the iterator not the data itself.
-pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
+pub(crate) trait IsRawColumn: Sized + Clone + Copy {
+    type Element: Clone;
     /// Create a column from a set of values and run lengths
     ///
     /// Eventually we'll want to be able to write to a file instead
     /// of an in-memory buffer.
     ///
     /// Implementations may assume that two sequential T will not be equal.
-    fn encode(input: &[(T, u64)]) -> Vec<u8>;
+    fn encode(input: &[(Self::Element, u64)]) -> Vec<u8>;
 
     /// Decode a column into this type and and an offset to the first element
     ///
@@ -95,13 +96,20 @@ pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
     fn decode(buf: &[u8]) -> Result<(Self, Offset), ()>;
 
     /// Read the next chunk of identical elements, returning offset of next element
-    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a T, u64, Offset)>, ()>;
+    fn next<'a, 'b>(
+        &'a mut self,
+        buf: &'b [u8],
+    ) -> Result<Option<(&'a Self::Element, u64, Offset)>, ()>;
 
     /// Read the next chunk of identical elements, returning offset of next element
-    fn skip(&mut self, elem: &T, offset: Offset);
+    fn skip(&mut self, elem: &Self::Element, offset: Offset);
 
     /// Do something for each value in the column.
-    fn for_each(&self, buf: &[u8], mut f: impl FnMut(&T, Range<u64>)) -> Result<(), ()> {
+    fn for_each(
+        &self,
+        buf: &[u8],
+        mut f: impl FnMut(&Self::Element, Range<u64>),
+    ) -> Result<(), ()> {
         let mut iter = self.clone();
         let mut i = 0;
         while let Some((v, count, _)) = iter.next(buf)? {
@@ -116,7 +124,8 @@ pub(crate) trait IsRawColumn<T>: Sized + Clone + Copy {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Offset(usize);
 
-impl IsRawColumn<bool> for BoolColumn {
+impl IsRawColumn for BoolColumn {
+    type Element = bool;
     fn encode(input: &[(bool, u64)]) -> Vec<u8> {
         let mut bytes = Vec::new();
         if input.is_empty() {

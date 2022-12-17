@@ -4,9 +4,11 @@
 use std::collections::BTreeSet;
 
 mod value;
+mod view;
 
 use value::{ColumnId, RawValue, TableId};
 pub use value::{Kind, Value};
+pub use view::{Lens, LensError};
 
 /// A "raw" row, as it will be sorted and stored.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

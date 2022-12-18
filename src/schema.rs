@@ -265,6 +265,47 @@ pub fn table_schema_schema() -> TableSchema {
             .with_id(ColumnId::const_new(b"column-aggregate"))
             .raw(),
     );
+    table.add_max(
+        [
+            ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
+                .with_id(ColumnId::const_new(b"modified-column!"))
+                .raw(),
+            ColumnSchema::with_default("name", String::default())
+                .with_id(b"name-of-column!!")
+                .raw(),
+        ]
+        .into_iter()
+        .flatten(),
+    );
+    //         aggregation: [
+    //             AggregatingSchema::Max(vec![
+    //                 ColumnSchema {
+    //                     id: ColumnId::from(b"modified-column!"),
+    //                     default: Value::U64(0), // FIXME datetime
+    //                     comment: Some("The time this column was modified.".into()),
+    //                 },
+    //                 ColumnSchema {
+    //                     id: ColumnId::from(b"name-of-column!!"),
+    //                     default: Value::Bytes(Vec::new()),
+    //                     comment: Some("The name of the column.".into()),
+    //                 },
+    //                 ColumnSchema {
+    //                     id: ColumnId::from(b"column-isdeleted"),
+    //                     default: Value::Bool(false),
+    //                     comment: Some("Whether this column has been deleted.".into()),
+    //                 },
+    //                 ColumnSchema {
+    //                     id: ColumnId::from(b"column-comment.."),
+    //                     default: Value::Bytes(Vec::new()),
+    //                     comment: Some("A human-friendly description of this column.".into()),
+    //                 },
+    //             ]),
+    //             AggregatingSchema::Min(vec![ColumnSchema {
+    //                 id: ColumnId::from(b"columnwascreated"),
+    //                 default: Value::U64(0),
+    //                 comment: Some("The time this column was created.".into()),
+    //             }]),
+    //         ]
     table
 }
 

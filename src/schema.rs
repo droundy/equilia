@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
 use crate::value::RawValue;
+use crate::LensError;
 
 /// A kind of column to aggregate
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -11,6 +12,31 @@ pub enum Aggregation {
     Min = 1,
     Max = 2,
     Sum = 3,
+}
+impl Lens for Aggregation {
+    const RAW_KINDS: &'static [crate::value::RawKind] = u64::RAW_KINDS;
+    const EXPECTED: &'static str = "An integer indicating which aggregation";
+    const LENS_ID: LensId = LensId(*b"AggregationKind.");
+}
+impl From<Aggregation> for RawValues {
+    fn from(a: Aggregation) -> Self {
+        (a as u64).into()
+    }
+}
+impl TryFrom<RawValues> for Aggregation {
+    type Error = LensError;
+    fn try_from(value: RawValues) -> Result<Self, Self::Error> {
+        let v = u64::try_from(value)?;
+        if v == Aggregation::None as u64 {
+            Ok(Aggregation::None)
+        } else if v == Aggregation::Max as u64 {
+            Ok(Aggregation::Max)
+        } else {
+            Err(LensError::InvalidValue {
+                value: format!("Unexpected: {v}"),
+            })
+        }
+    }
 }
 
 /// A schema for a column
@@ -151,7 +177,7 @@ pub fn table_schema_schema() -> TableSchema {
             .raw(),
     );
     table.add_primary(
-        ColumnSchema::with_default("aggregate", Aggregation)
+        ColumnSchema::with_default("aggregate", Aggregation::None)
             .with_id(ColumnId::const_new(b"column-aggregate"))
             .raw(),
     );

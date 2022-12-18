@@ -10,6 +10,11 @@ pub enum LensError {
         /// A human-friendly description of the format of this type.
         expected: String,
     },
+    /// The values of columns were invalid
+    InvalidValue {
+        /// The particular invalid value
+        value: String,
+    },
 }
 
 macro_rules! define_lens_id {
@@ -64,7 +69,7 @@ define_lens_id! {TableId, b"__table_id______"}
 
 /// A compound aggregation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct LensId([u8; 16]);
+pub struct LensId(pub(crate) [u8; 16]);
 
 /// A way of looking at a table or modifying it, a kind of pseudocolumn.
 pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {

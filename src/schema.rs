@@ -119,6 +119,21 @@ impl TableSchema {
             id: AggregationId(rand::random()),
         });
     }
+
+    /// Add min aggregating column group
+    pub fn add_min(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
+        self.aggregations.insert(AggregatingSchema::Min {
+            columns: columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
+            id: AggregationId(rand::random()),
+        });
+    }
+
+    /// Add summing columns
+    pub fn add_sum(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
+        for c in columns {
+            self.aggregations.insert(AggregatingSchema::Sum([c]));
+        }
+    }
 }
 
 impl<T: Lens + Default + Clone> ColumnSchema<T> {
@@ -162,6 +177,7 @@ impl<T: Lens + Clone> ColumnSchema<T> {
     }
 }
 
+/// This is he schema for the table that holds schemas of tables
 pub fn table_schema_schema() -> TableSchema {
     let mut table = TableSchema::new("tables");
     table.id = TableId::const_new(b"__table_schemas_");

@@ -6,7 +6,7 @@ mod schema;
 mod value;
 
 pub use lens::{Lens, LensError};
-pub use schema::{ColumnSchema, RawColumnSchema, TableSchema};
+pub use schema::{table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema};
 use value::RawValue;
 pub use value::{Kind, Value};
 

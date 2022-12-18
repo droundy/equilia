@@ -144,6 +144,12 @@ pub enum Kind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnId([u8; 16]);
 
+impl ColumnId {
+    pub fn new() -> Self {
+        ColumnId(rand::random())
+    }
+}
+
 impl std::fmt::Display for ColumnId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Ok(s) = std::str::from_utf8(&self.0) {
@@ -163,6 +169,12 @@ impl From<&[u8; 16]> for ColumnId {
 /// A column id
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TableId([u8; 16]);
+
+impl TableId {
+    pub fn new() -> Self {
+        TableId(rand::random())
+    }
+}
 
 impl std::fmt::Display for TableId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

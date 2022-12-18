@@ -12,6 +12,8 @@ readme = "README.md"
 
 [dependencies]
 
+rand = "0.8.5"
+
 [dev-dependencies]
 expect-test = "1.4.0"
 

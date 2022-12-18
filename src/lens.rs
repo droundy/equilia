@@ -12,19 +12,73 @@ pub enum LensError {
     },
 }
 
+macro_rules! define_lens_id {
+    ($tname:ident, $lensid:expr) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $tname(pub(crate) [u8; 16]);
+
+        impl $tname {
+            pub fn new() -> Self {
+                Self(rand::random())
+            }
+            #[allow(dead_code)]
+            pub(crate) const fn const_new(b: &[u8; 16]) -> Self {
+                Self(*b)
+            }
+        }
+
+        impl Lens for $tname {
+            const RAW_KINDS: &'static [RawKind] = &[RawKind::U64];
+            const LENS_ID: LensId = LensId(*$lensid);
+            const EXPECTED: &'static str = "u64";
+        }
+        impl From<$tname> for RawValues {
+            fn from(id: $tname) -> Self {
+                RawValues(vec![RawValue::FixedBytes(id.0.to_vec())])
+            }
+        }
+        impl TryFrom<RawValues> for $tname {
+            type Error = LensError;
+            fn try_from(v: RawValues) -> Result<Self, LensError> {
+                match &v.0.as_slice() {
+                    &[RawValue::FixedBytes(b)] => {
+                        if let Ok(b) = b.as_slice().try_into() {
+                            Ok(Self(b))
+                        } else {
+                            Err(LensError::InvalidKinds {
+                                expected: Self::EXPECTED.to_string(),
+                            })
+                        }
+                    }
+                    _ => Err(LensError::InvalidKinds {
+                        expected: Self::EXPECTED.to_string(),
+                    }),
+                }
+            }
+        }
+    };
+}
+
+define_lens_id! {ColumnId, b"__column_id_____"}
+define_lens_id! {TableId, b"__table_id______"}
+
+/// A compound aggregation
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LensId([u8; 16]);
+
 /// A way of looking at a table or modifying it, a kind of pseudocolumn.
 pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {
     /// The kinds of raw columns involved
     const RAW_KINDS: &'static [RawKind];
     /// A stable unique identifier for this type.
-    const UUID: [u8; 16];
+    const LENS_ID: LensId;
     /// The expected kind error message;
     const EXPECTED: &'static str;
 }
 
 impl Lens for u64 {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::U64];
-    const UUID: [u8; 16] = *b"just a u64 only!";
+    const LENS_ID: LensId = LensId(*b"just a u64 only!");
     const EXPECTED: &'static str = "u64";
 }
 
@@ -47,7 +101,7 @@ impl TryFrom<RawValues> for u64 {
 
 impl Lens for std::time::SystemTime {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::U64, RawKind::U64];
-    const UUID: [u8; 16] = *b"time::SystemTime";
+    const LENS_ID: LensId = LensId(*b"time::SystemTime");
     const EXPECTED: &'static str = "seconds: u64, nanos: u64";
 }
 

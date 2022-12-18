@@ -140,32 +140,6 @@ pub enum Kind {
     Table,
 }
 
-/// A column id
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ColumnId([u8; 16]);
-
-impl ColumnId {
-    pub fn new() -> Self {
-        ColumnId(rand::random())
-    }
-}
-
-impl std::fmt::Display for ColumnId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Ok(s) = std::str::from_utf8(&self.0) {
-            write!(f, "`{s}`")
-        } else {
-            write!(f, "Column({:?})", self.0)
-        }
-    }
-}
-
-impl From<&[u8; 16]> for ColumnId {
-    fn from(bytes: &[u8; 16]) -> Self {
-        ColumnId(*bytes)
-    }
-}
-
 /// A logical value that has a Kind.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Value {
@@ -177,8 +151,6 @@ pub enum Value {
     Bytes(Vec<u8>),
     /// A bytes value with fixed length
     FixedBytes(Vec<u8>),
-    /// A column Uuid
-    Column(ColumnId),
 }
 
 impl Value {
@@ -189,7 +161,6 @@ impl Value {
             Value::U64(_) => RawKind::U64,
             Value::Bytes(_) => RawKind::Bytes,
             Value::FixedBytes(b) => RawKind::FixedBytes(b.len()),
-            Value::Column(b) => RawKind::FixedBytes(b.0.len()),
         }
     }
 }
@@ -206,7 +177,6 @@ impl std::fmt::Display for Value {
                     write!(f, "{x:?}")
                 }
             }
-            Value::Column(x) => write!(f, "{x}"),
         }
     }
 }

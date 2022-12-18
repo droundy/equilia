@@ -172,15 +172,30 @@ impl std::fmt::Display for TableSchema {
         for (_, c) in self.columns() {
             writeln!(f, "    {c},")?;
         }
-        // column_list("PRIMARY KEY", &self.primary, f)?;
-        // for a in self.aggregation.iter() {
-        //     match a {
-        //         AggregatingSchema::Max(v) => column_list("MAX", v, f)?,
-        //         AggregatingSchema::Min(v) => column_list("MIN", v, f)?,
-        //         AggregatingSchema::Sum(c) => column_list("SUM", c, f)?,
-        //     }
-        // }
-        // writeln!(f, "}};")
+        column_list("PRIMARY KEY", &self.primary, f)?;
+        for a in self.aggregations.iter() {
+            match a {
+                AggregatingSchema::Max { columns, .. } => column_list("MAX", columns, f)?,
+                AggregatingSchema::Min { columns, .. } => column_list("MIN", columns, f)?,
+                AggregatingSchema::Sum(columns) => column_list("SUM", columns, f)?,
+            }
+        }
+        writeln!(f, "}};")
+    }
+}
+fn column_list(
+    keyword: &str,
+    v: &OrderedRawColumns,
+    f: &mut std::fmt::Formatter<'_>,
+) -> std::fmt::Result {
+    let mut columns = v.iter().map(|x| &x.1);
+    if let Some(c) = columns.next() {
+        write!(f, "    {keyword} ( {}", c.name)?;
+        for c in columns {
+            write!(f, ", {}", c.name)?;
+        }
+        writeln!(f, " ),")
+    } else {
         Ok(())
     }
 }
@@ -261,6 +276,8 @@ fn format_db_tables() {
             column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS '__column_id_____',
             order U64 DEFAULT 0 LENS 'just a u64 only!',
             aggregate U64 DEFAULT 0 LENS 'AggregationKind.',
+            PRIMARY KEY ( table, column, order, aggregate ),
+        };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
 

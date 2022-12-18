@@ -136,6 +136,25 @@ impl TableSchema {
     }
 }
 
+impl std::fmt::Display for TableSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "CREATE TABLE {} ID {} {{", self.name, self.id)?;
+        // for c in self.columns() {
+        //     writeln!(f, "    {c},")?;
+        // }
+        // column_list("PRIMARY KEY", &self.primary, f)?;
+        // for a in self.aggregation.iter() {
+        //     match a {
+        //         AggregatingSchema::Max(v) => column_list("MAX", v, f)?,
+        //         AggregatingSchema::Min(v) => column_list("MIN", v, f)?,
+        //         AggregatingSchema::Sum(c) => column_list("SUM", c, f)?,
+        //     }
+        // }
+        // writeln!(f, "}};")
+        Ok(())
+    }
+}
+
 impl<T: Lens + Default + Clone> ColumnSchema<T> {
     /// Create a new column with default given by [`Default`].
     pub fn new(name: &'static str) -> ColumnSchema<T> {

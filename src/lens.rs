@@ -61,6 +61,16 @@ macro_rules! define_lens_id {
                 }
             }
         }
+
+        impl std::fmt::Display for $tname {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                if let Ok(s) = std::str::from_utf8(&self.0) {
+                    write!(f, "{}('{s}')", stringify!($tname))
+                } else {
+                    write!(f, "{}({:?})", stringify!($tname), self.0)
+                }
+            }
+        }
     };
 }
 

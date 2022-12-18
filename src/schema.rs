@@ -59,6 +59,18 @@ pub struct RawColumnSchema {
     suborder: u64,
     lens: LensId,
 }
+impl std::fmt::Display for RawColumnSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} {:?} DEFAULT {} LENS {}",
+            self.name,
+            self.default.kind(),
+            self.default,
+            self.lens,
+        )
+    }
+}
 /// A compound aggregation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AggregationId([u8; 16]);
@@ -76,7 +88,17 @@ pub enum AggregatingSchema {
         id: AggregationId,
     },
     /// Summing
-    Sum([RawColumnSchema; 1]),
+    Sum(OrderedRawColumns),
+}
+
+impl AggregatingSchema {
+    fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
+        match self {
+            AggregatingSchema::Max { columns, .. } => columns.iter(),
+            AggregatingSchema::Min { columns, .. } => columns.iter(),
+            AggregatingSchema::Sum(columns) => columns.iter(),
+        }
+    }
 }
 
 type OrderedRawColumns = BTreeSet<(u64, RawColumnSchema)>;
@@ -131,17 +153,25 @@ impl TableSchema {
     /// Add summing columns
     pub fn add_sum(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         for c in columns {
-            self.aggregations.insert(AggregatingSchema::Sum([c]));
+            self.aggregations
+                .insert(AggregatingSchema::Sum([(0, c)].into_iter().collect()));
         }
+    }
+
+    /// All the columns
+    fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
+        self.primary
+            .iter()
+            .chain(self.aggregations.iter().flat_map(|a| a.columns()))
     }
 }
 
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CREATE TABLE {} ID {} {{", self.name, self.id)?;
-        // for c in self.columns() {
-        //     writeln!(f, "    {c},")?;
-        // }
+        for (_, c) in self.columns() {
+            writeln!(f, "    {c},")?;
+        }
         // column_list("PRIMARY KEY", &self.primary, f)?;
         // for a in self.aggregation.iter() {
         //     match a {
@@ -220,25 +250,31 @@ pub fn table_schema_schema() -> TableSchema {
             .with_id(ColumnId::const_new(b"column-aggregate"))
             .raw(),
     );
-    //             ColumnSchema {
-    //                 id: ColumnId::from(b"table_id--tables"),
-    //                 default: Value::Column(ColumnId::from(b"TABLE--NOT-EXIST")),
-    //                 comment: Some("The table this column is in.".into()),
-    //             },
-    //             ColumnSchema {
-    //                 id: ColumnId::from(b"column_id-tables"),
-    //                 default: Value::Column(ColumnId::from(b"COLUMN-NOT-EXIST")),
-    //                 comment: Some("The id of the column.".into()),
-    //             },
-    //             ColumnSchema {
-    //                 id: ColumnId::from(b"column-sortorder"),
-    //                 default: Value::U64(0),
-    //                 comment: Some("The sort order where the column shows up.".into()),
-    //             },
-    //             ColumnSchema {
-    //                 id: ColumnId::from(b"column-aggregate"),
-    //                 default: Value::U64(0),
-    //                 comment: Some("0: primary, 1: max, 2: min, 3: sum.".into()),
-    //             },
     table
+}
+
+#[test]
+fn format_db_tables() {
+    let expected = expect_test::expect![[r#"
+        CREATE TABLE tables ID '__table_schemas_' {
+            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS '__table_id______',
+            column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS '__column_id_____',
+            order U64 DEFAULT 0 LENS 'just a u64 only!',
+            aggregate U64 DEFAULT 0 LENS 'AggregationKind.',
+    "#]];
+    expected.assert_eq(table_schema_schema().to_string().as_str());
+
+    // let expected = expect_test::expect![[r#"
+    //     CREATE TABLE Table('__tables_in_db__') {
+    //         `table_id-in-db!!` U64 DEFAULT 0,
+    //         `MODIFIED-TABLE..` U64 DEFAULT 0,
+    //         `name-of-table...` Bytes DEFAULT '',
+    //         `table-is-deleted` Bool DEFAULT false,
+    //         `table-wascreated` U64 DEFAULT 0,
+    //         PRIMARY KEY ( `table_id-in-db!!` ),
+    //         MAX ( `MODIFIED-TABLE..`, `name-of-table...`, `table-is-deleted` ),
+    //         MIN ( `table-wascreated` ),
+    //     };
+    // "#]];
+    // expected.assert_eq(db_schema_schema().to_string().as_str());
 }

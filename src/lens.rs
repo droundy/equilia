@@ -19,7 +19,7 @@ pub enum LensError {
 
 macro_rules! define_lens_id {
     ($tname:ident, $lensid:expr) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub struct $tname(pub(crate) [u8; 16]);
 
         impl $tname {
@@ -65,6 +65,18 @@ macro_rules! define_lens_id {
         impl std::fmt::Display for $tname {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 if let Ok(s) = std::str::from_utf8(&self.0) {
+                    write!(f, "'{s}'")
+                } else {
+                    for c in self.0.iter() {
+                        write!(f, "{:x}", c)?;
+                    }
+                    Ok(())
+                }
+            }
+        }
+        impl std::fmt::Debug for $tname {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                if let Ok(s) = std::str::from_utf8(&self.0) {
                     write!(f, "{}('{s}')", stringify!($tname))
                 } else {
                     write!(f, "{}({:?})", stringify!($tname), self.0)
@@ -76,10 +88,7 @@ macro_rules! define_lens_id {
 
 define_lens_id! {ColumnId, b"__column_id_____"}
 define_lens_id! {TableId, b"__table_id______"}
-
-/// A compound aggregation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct LensId(pub(crate) [u8; 16]);
+define_lens_id! {LensId, b"__lens_id_______"}
 
 /// A way of looking at a table or modifying it, a kind of pseudocolumn.
 pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {

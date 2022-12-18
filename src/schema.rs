@@ -31,6 +31,10 @@ impl TryFrom<RawValues> for Aggregation {
             Ok(Aggregation::None)
         } else if v == Aggregation::Max as u64 {
             Ok(Aggregation::Max)
+        } else if v == Aggregation::Min as u64 {
+            Ok(Aggregation::Min)
+        } else if v == Aggregation::Sum as u64 {
+            Ok(Aggregation::Sum)
         } else {
             Err(LensError::InvalidValue {
                 value: format!("Unexpected: {v}"),

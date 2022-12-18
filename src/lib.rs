@@ -8,7 +8,6 @@ mod value;
 pub use lens::{Lens, LensError};
 pub use schema::{table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema};
 use value::RawValue;
-pub use value::{Kind, Value};
 
 /// A "raw" row, as it will be sorted and stored.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

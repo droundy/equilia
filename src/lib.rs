@@ -3,6 +3,7 @@
 
 mod lens;
 mod schema;
+mod parser;
 mod value;
 
 pub use lens::{Lens, LensError};

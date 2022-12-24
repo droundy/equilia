@@ -76,11 +76,22 @@ pub(crate) struct BoolColumn {
     offset: Offset,
 }
 
+/// An error reading
+pub struct Error;
+/// A chunk of identical values.
+pub struct Chunk<T> {
+    value: T,
+    count: u64,
+    offset: Offset,
+}
+
 /// A specific format for a [`RawColumn`].
 ///
 /// Note that this type doubles as a kind of iterator, but a weird one where the
 /// values are borrowed from the iterator not the data itself.
-pub(crate) trait IsRawColumn: Sized + Clone + Copy {
+pub(crate) trait IsRawColumn:
+    Sized + Clone + Copy + Iterator<Item = Result<Chunk<Self::Element>, Error>>
+{
     type Element: Clone;
     /// Create a column from a set of values and run lengths
     ///
@@ -96,7 +107,7 @@ pub(crate) trait IsRawColumn: Sized + Clone + Copy {
     fn decode(buf: &[u8]) -> Result<(Self, Offset), ()>;
 
     /// Read the next chunk of identical elements, returning offset of next element
-    fn next<'a, 'b>(
+    fn next_deprecated<'a, 'b>(
         &'a mut self,
         buf: &'b [u8],
     ) -> Result<Option<(&'a Self::Element, u64, Offset)>, ()>;
@@ -112,7 +123,7 @@ pub(crate) trait IsRawColumn: Sized + Clone + Copy {
     ) -> Result<(), ()> {
         let mut iter = self.clone();
         let mut i = 0;
-        while let Some((v, count, _)) = iter.next(buf)? {
+        while let Some((v, count, _)) = iter.next_deprecated(buf)? {
             f(v, i..i + count as u64);
             i += count as u64;
         }
@@ -123,6 +134,13 @@ pub(crate) trait IsRawColumn: Sized + Clone + Copy {
 /// An offset into a Column
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Offset(usize);
+
+impl Iterator for BoolColumn {
+    type Item = Result<Chunk<bool>, Error>;
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
 
 impl IsRawColumn for BoolColumn {
     type Element = bool;
@@ -149,7 +167,10 @@ impl IsRawColumn for BoolColumn {
         ))
     }
 
-    fn next<'a, 'b>(&'a mut self, buf: &'b [u8]) -> Result<Option<(&'a bool, u64, Offset)>, ()> {
+    fn next_deprecated<'a, 'b>(
+        &'a mut self,
+        buf: &'b [u8],
+    ) -> Result<Option<(&'a bool, u64, Offset)>, ()> {
         if buf.len() <= self.offset.0 {
             return Ok(None);
         }

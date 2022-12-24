@@ -17,6 +17,7 @@ impl Lens for Aggregation {
     const RAW_KINDS: &'static [crate::value::RawKind] = u64::RAW_KINDS;
     const EXPECTED: &'static str = "An integer indicating which aggregation";
     const LENS_ID: LensId = LensId(*b"AggregationKind.");
+    const NAMES: &'static [&'static str] = &[""];
 }
 impl From<Aggregation> for RawValues {
     fn from(a: Aggregation) -> Self {
@@ -56,15 +57,24 @@ pub struct RawColumnSchema {
     default: RawValue,
     name: &'static str,
     id: ColumnId,
-    suborder: u64,
+    fieldname: &'static str,
     lens: LensId,
+}
+impl RawColumnSchema {
+    fn display_name(&self) -> String {
+        if self.fieldname.is_empty() {
+            self.name.to_owned()
+        } else {
+            format!("{}.{}", self.name, self.fieldname,)
+        }
+    }
 }
 impl std::fmt::Display for RawColumnSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{} {:?} DEFAULT {} LENS {}",
-            self.name,
+            self.display_name(),
             self.default.kind(),
             self.default,
             self.lens,
@@ -190,9 +200,9 @@ fn column_list(
 ) -> std::fmt::Result {
     let mut columns = v.iter().map(|x| &x.1);
     if let Some(c) = columns.next() {
-        write!(f, "    {keyword} ( {}", c.name)?;
+        write!(f, "    {keyword} ( {}", c.display_name())?;
         for c in columns {
-            write!(f, ", {}", c.name)?;
+            write!(f, ", {}", c.display_name())?;
         }
         writeln!(f, " ),")
     } else {
@@ -231,11 +241,11 @@ impl<T: Lens + Clone> ColumnSchema<T> {
         let name = self.name;
         vs.0.into_iter()
             .enumerate()
-            .map(move |(suborder, default)| RawColumnSchema {
+            .map(move |(idx, default)| RawColumnSchema {
                 name,
                 default,
                 id,
-                suborder: suborder as u64,
+                fieldname: T::NAMES[idx],
                 lens: T::LENS_ID,
             })
     }
@@ -315,7 +325,11 @@ fn format_db_tables() {
             column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS '__column_id_____',
             order U64 DEFAULT 0 LENS 'just a u64 only!',
             aggregate U64 DEFAULT 0 LENS 'AggregationKind.',
+            modified.seconds U64 DEFAULT 0 LENS 'time::SystemTime',
+            modified.subsecond_nanos U64 DEFAULT 0 LENS 'time::SystemTime',
+            name Bytes DEFAULT '' LENS 'String..........',
             PRIMARY KEY ( table, column, order, aggregate ),
+            MAX ( modified.seconds, modified.subsecond_nanos, name ),
         };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());

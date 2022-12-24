@@ -35,7 +35,8 @@ macro_rules! define_lens_id {
         impl Lens for $tname {
             const RAW_KINDS: &'static [RawKind] = &[RawKind::U64];
             const LENS_ID: LensId = LensId(*$lensid);
-            const EXPECTED: &'static str = "u64";
+            const EXPECTED: &'static str = "[u8;16]";
+            const NAMES: &'static [&'static str] = &[""];
         }
         impl From<$tname> for RawValues {
             fn from(id: $tname) -> Self {
@@ -98,12 +99,15 @@ pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {
     const LENS_ID: LensId;
     /// The expected kind error message;
     const EXPECTED: &'static str;
+    /// Names
+    const NAMES: &'static [&'static str];
 }
 
 impl Lens for u64 {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::U64];
     const LENS_ID: LensId = LensId(*b"just a u64 only!");
     const EXPECTED: &'static str = "u64";
+    const NAMES: &'static [&'static str] = &[""];
 }
 
 impl From<u64> for RawValues {
@@ -127,6 +131,7 @@ impl Lens for std::time::SystemTime {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::U64, RawKind::U64];
     const LENS_ID: LensId = LensId(*b"time::SystemTime");
     const EXPECTED: &'static str = "seconds: u64, nanos: u64";
+    const NAMES: &'static [&'static str] = &["seconds", "subsecond_nanos"];
 }
 
 impl From<std::time::SystemTime> for RawValues {
@@ -158,6 +163,7 @@ impl Lens for String {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::Bytes];
     const LENS_ID: LensId = LensId(*b"String..........");
     const EXPECTED: &'static str = "utf8 bytes";
+    const NAMES: &'static [&'static str] = &[""];
 }
 
 impl From<String> for RawValues {

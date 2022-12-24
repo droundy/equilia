@@ -1,22 +1,26 @@
-use std::str::Chars;
-
 struct Lexer<'a> {
-    ch: Chars<'a>,
+    query: &'a [u8],
+    pos: usize,
 }
 
 impl<'a> Lexer<'a> {
     fn new(query: &'a str) -> Self {
-        Self { ch: query.chars() }
+        Self {
+            query: query.as_bytes(),
+            pos: 0,
+        }
     }
 
     fn next_token(&mut self) -> TokenType {
-        match self.ch.next() {
-            Some(c) => {
-                if c == '*' {
+        let ch = self.query.get(self.pos);
+        self.pos += 1;
+        match ch {
+            Some(&c) => {
+                if c == b'*' {
                     TokenType::Asterisk
-                } else if c.is_alphabetic() {
+                } else if c.is_ascii_alphabetic() {
                     self.consume_word()
-                } else if c.is_whitespace() {
+                } else if c.is_ascii_whitespace() {
                     TokenType::WhiteSpace
                 } else {
                     TokenType::Unknown
@@ -27,8 +31,9 @@ impl<'a> Lexer<'a> {
     }
 
     fn consume_word(&mut self) -> TokenType {
-        for c in self.ch.by_ref() {
-            if c.is_alphabetic() {
+        while let Some(ch) = self.query.get(self.pos) {
+            self.pos += 1;
+            if ch.is_ascii_alphabetic() {
                 continue;
             } else {
                 break;

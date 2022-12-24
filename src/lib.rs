@@ -2,8 +2,8 @@
 //! A nice columnar data store.
 
 mod lens;
-mod schema;
 mod parser;
+mod schema;
 mod value;
 
 pub use lens::{Lens, LensError};

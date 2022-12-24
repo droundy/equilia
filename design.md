@@ -13,7 +13,7 @@ also makes adding a column to a table a pretty easy and efficient process (not t
 </details>
 
 <details>
-<summary><h3>All table mutations are commutative and associative (for now).</h3><em>
+<summary><h3>All table and database mutations are commutative and associative (for now).</h3><em>
 All mutations have a merge result that is independent of the order of insertions
 or merges, to ease the consistency of replication.  This has some annoying
 implications for deletes, but is huge in terms of the correctness of

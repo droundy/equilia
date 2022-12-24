@@ -24,22 +24,22 @@ pub fn read_u64(mut buf: &[u8]) -> Result<(u64, &[u8]), ()> {
     buf = &buf[1..];
     match b {
         U16_CODE => {
-            let (array, rest) = try_split::<2>(buf).ok_or(())?;
+            let (array, rest) = try_split_array::<2>(buf).ok_or(())?;
             Ok((u16::from_be_bytes(array) as u64, rest))
         }
         U32_CODE => {
-            let (array, rest) = try_split::<4>(buf).ok_or(())?;
+            let (array, rest) = try_split_array::<4>(buf).ok_or(())?;
             Ok((u32::from_be_bytes(array) as u64, rest))
         }
         U64_CODE => {
-            let (array, rest) = try_split::<8>(buf).ok_or(())?;
+            let (array, rest) = try_split_array::<8>(buf).ok_or(())?;
             Ok((u64::from_be_bytes(array), rest))
         }
         _ => Ok((b as u64, buf)),
     }
 }
 
-fn try_split<const N: usize>(buf: &[u8]) -> Option<([u8; N], &[u8])> {
+fn try_split_array<const N: usize>(buf: &[u8]) -> Option<([u8; N], &[u8])> {
     if buf.len() < N {
         None
     } else {

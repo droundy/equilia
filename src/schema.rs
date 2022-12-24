@@ -253,7 +253,7 @@ impl<T: Lens + Clone> ColumnSchema<T> {
 
 /// This is he schema for the table that holds schemas of tables
 pub fn table_schema_schema() -> TableSchema {
-    let mut table = TableSchema::new("tables");
+    let mut table = TableSchema::new("columns");
     table.id = TableId::const_new(b"__table_schemas_");
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
@@ -280,71 +280,75 @@ pub fn table_schema_schema() -> TableSchema {
             .with_id(ColumnId::const_new(b"modified-column!"))
             .raw()
             .chain(
-                ColumnSchema::with_default("name", String::default())
+                ColumnSchema::with_default("column_name", String::default())
                     .with_id(ColumnId::const_new(b"name-of-column!!"))
                     .raw(),
             ),
     );
-    //         aggregation: [
-    //             AggregatingSchema::Max(vec![
-    //                 ColumnSchema {
-    //                     id: ColumnId::from(b"modified-column!"),
-    //                     default: Value::U64(0), // FIXME datetime
-    //                     comment: Some("The time this column was modified.".into()),
-    //                 },
-    //                 ColumnSchema {
-    //                     id: ColumnId::from(b"name-of-column!!"),
-    //                     default: Value::Bytes(Vec::new()),
-    //                     comment: Some("The name of the column.".into()),
-    //                 },
-    //                 ColumnSchema {
-    //                     id: ColumnId::from(b"column-isdeleted"),
-    //                     default: Value::Bool(false),
-    //                     comment: Some("Whether this column has been deleted.".into()),
-    //                 },
-    //                 ColumnSchema {
-    //                     id: ColumnId::from(b"column-comment.."),
-    //                     default: Value::Bytes(Vec::new()),
-    //                     comment: Some("A human-friendly description of this column.".into()),
-    //                 },
-    //             ]),
-    //             AggregatingSchema::Min(vec![ColumnSchema {
-    //                 id: ColumnId::from(b"columnwascreated"),
-    //                 default: Value::U64(0),
-    //                 comment: Some("The time this column was created.".into()),
-    //             }]),
-    //         ]
+    table
+}
+
+/// This is the schema for the table that holds the schema of the db itself
+pub fn db_schema_schema() -> TableSchema {
+    let mut table = TableSchema::new("tables");
+    table.id = TableId::const_new(b"__db_schema_____");
+    table.add_primary(
+        ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
+            .with_id(ColumnId::const_new(b"table_id--tables"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("created", std::time::SystemTime::UNIX_EPOCH)
+            .with_id(ColumnId::const_new(b"__table_created!"))
+            .raw(),
+    );
+    table.add_max(
+        ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
+            .with_id(ColumnId::const_new(b"modified-table!!"))
+            .raw()
+            .chain(
+                ColumnSchema::with_default("table_name", String::default())
+                    .with_id(ColumnId::const_new(b"name-of-table!!!"))
+                    .raw(),
+            )
+            .chain(
+                ColumnSchema::with_default("is_deleted", false)
+                    .with_id(ColumnId::const_new(b"deleted-table!!!"))
+                    .raw(),
+            ),
+    );
     table
 }
 
 #[test]
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        CREATE TABLE tables ID __table_schemas {
+        CREATE TABLE columns ID __table_schemas {
             table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order U64 DEFAULT 0 LENS u64,
             aggregate U64 DEFAULT 0 LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
-            name Bytes DEFAULT '' LENS String,
+            column_name Bytes DEFAULT '' LENS String,
             PRIMARY KEY ( table, column, order, aggregate ),
-            MAX ( modified.seconds, modified.subsecond_nanos, name ),
+            MAX ( modified.seconds, modified.subsecond_nanos, column_name ),
         };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
 
-    // let expected = expect_test::expect![[r#"
-    //     CREATE TABLE Table('__tables_in_db__') {
-    //         `table_id-in-db!!` U64 DEFAULT 0,
-    //         `MODIFIED-TABLE..` U64 DEFAULT 0,
-    //         `name-of-table...` Bytes DEFAULT '',
-    //         `table-is-deleted` Bool DEFAULT false,
-    //         `table-wascreated` U64 DEFAULT 0,
-    //         PRIMARY KEY ( `table_id-in-db!!` ),
-    //         MAX ( `MODIFIED-TABLE..`, `name-of-table...`, `table-is-deleted` ),
-    //         MIN ( `table-wascreated` ),
-    //     };
-    // "#]];
-    // expected.assert_eq(db_schema_schema().to_string().as_str());
+    let expected = expect_test::expect![[r#"
+        CREATE TABLE tables ID __db_schema {
+            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            created.seconds U64 DEFAULT 0 LENS time::SystemTime,
+            created.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
+            modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
+            modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
+            table_name Bytes DEFAULT '' LENS String,
+            is_deleted Bool DEFAULT false LENS bool,
+            PRIMARY KEY ( table, created.seconds, created.subsecond_nanos ),
+            MAX ( modified.seconds, modified.subsecond_nanos, table_name, is_deleted ),
+        };
+    "#]];
+    expected.assert_eq(db_schema_schema().to_string().as_str());
 }

@@ -6,7 +6,9 @@ mod schema;
 mod value;
 
 pub use lens::{Lens, LensError};
-pub use schema::{table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema};
+pub use schema::{
+    db_schema_schema, table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema,
+};
 use value::RawValue;
 
 /// A "raw" row, as it will be sorted and stored.

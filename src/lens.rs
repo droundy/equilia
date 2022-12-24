@@ -191,3 +191,28 @@ impl TryFrom<RawValues> for String {
         }
     }
 }
+
+impl Lens for bool {
+    const RAW_KINDS: &'static [RawKind] = &[RawKind::Bool];
+    const LENS_ID: LensId = LensId(*b"bool____________");
+    const EXPECTED: &'static str = "bool";
+    const NAMES: &'static [&'static str] = &[""];
+}
+
+impl From<bool> for RawValues {
+    fn from(v: bool) -> Self {
+        RawValues(vec![RawValue::Bool(v)])
+    }
+}
+
+impl TryFrom<RawValues> for bool {
+    type Error = LensError;
+    fn try_from(value: RawValues) -> Result<Self, Self::Error> {
+        match value.0.as_slice() {
+            &[RawValue::Bool(b)] => Ok(b),
+            _ => Err(LensError::InvalidKinds {
+                expected: Self::EXPECTED.to_string(),
+            }),
+        }
+    }
+}

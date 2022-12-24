@@ -153,3 +153,31 @@ impl TryFrom<RawValues> for std::time::SystemTime {
         }
     }
 }
+
+impl Lens for String {
+    const RAW_KINDS: &'static [RawKind] = &[RawKind::Bytes];
+    const LENS_ID: LensId = LensId(*b"String..........");
+    const EXPECTED: &'static str = "utf8 bytes";
+}
+
+impl From<String> for RawValues {
+    fn from(v: String) -> Self {
+        RawValues(vec![RawValue::Bytes(v.as_bytes().to_vec())])
+    }
+}
+
+impl TryFrom<RawValues> for String {
+    type Error = LensError;
+    fn try_from(value: RawValues) -> Result<Self, Self::Error> {
+        match value.0.as_slice() {
+            [RawValue::Bytes(b)] => {
+                String::from_utf8(b.clone()).map_err(|e| LensError::InvalidValue {
+                    value: format!("{e}"),
+                })
+            }
+            _ => Err(LensError::InvalidKinds {
+                expected: Self::EXPECTED.to_string(),
+            }),
+        }
+    }
+}

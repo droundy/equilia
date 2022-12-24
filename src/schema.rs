@@ -266,16 +266,14 @@ pub fn table_schema_schema() -> TableSchema {
             .raw(),
     );
     table.add_max(
-        [
-            ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
-                .with_id(ColumnId::const_new(b"modified-column!"))
-                .raw(),
-            ColumnSchema::with_default("name", String::default())
-                .with_id(b"name-of-column!!")
-                .raw(),
-        ]
-        .into_iter()
-        .flatten(),
+        ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
+            .with_id(ColumnId::const_new(b"modified-column!"))
+            .raw()
+            .chain(
+                ColumnSchema::with_default("name", String::default())
+                    .with_id(ColumnId::const_new(b"name-of-column!!"))
+                    .raw(),
+            ),
     );
     //         aggregation: [
     //             AggregatingSchema::Max(vec![

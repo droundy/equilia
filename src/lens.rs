@@ -66,7 +66,11 @@ macro_rules! define_lens_id {
         impl std::fmt::Display for $tname {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 if let Ok(s) = std::str::from_utf8(&self.0) {
-                    write!(f, "'{s}'")
+                    if s.chars().any(char::is_whitespace) {
+                        write!(f, "'{s}'")
+                    } else {
+                        write!(f, "{}", s.trim_end_matches('_'))
+                    }
                 } else {
                     for c in self.0.iter() {
                         write!(f, "{:x}", c)?;
@@ -87,9 +91,9 @@ macro_rules! define_lens_id {
     };
 }
 
-define_lens_id! {ColumnId, b"__column_id_____"}
-define_lens_id! {TableId, b"__table_id______"}
-define_lens_id! {LensId, b"__lens_id_______"}
+define_lens_id! {ColumnId, b"__ColumnId______"}
+define_lens_id! {TableId, b"__TableId_______"}
+define_lens_id! {LensId, b"__LensId________"}
 
 /// A way of looking at a table or modifying it, a kind of pseudocolumn.
 pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {
@@ -105,7 +109,7 @@ pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {
 
 impl Lens for u64 {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::U64];
-    const LENS_ID: LensId = LensId(*b"just a u64 only!");
+    const LENS_ID: LensId = LensId(*b"u64_____________");
     const EXPECTED: &'static str = "u64";
     const NAMES: &'static [&'static str] = &[""];
 }
@@ -161,7 +165,7 @@ impl TryFrom<RawValues> for std::time::SystemTime {
 
 impl Lens for String {
     const RAW_KINDS: &'static [RawKind] = &[RawKind::Bytes];
-    const LENS_ID: LensId = LensId(*b"String..........");
+    const LENS_ID: LensId = LensId(*b"String__________");
     const EXPECTED: &'static str = "utf8 bytes";
     const NAMES: &'static [&'static str] = &[""];
 }

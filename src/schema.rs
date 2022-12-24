@@ -16,7 +16,7 @@ pub enum Aggregation {
 impl Lens for Aggregation {
     const RAW_KINDS: &'static [crate::value::RawKind] = u64::RAW_KINDS;
     const EXPECTED: &'static str = "An integer indicating which aggregation";
-    const LENS_ID: LensId = LensId(*b"AggregationKind.");
+    const LENS_ID: LensId = LensId(*b"__Aggregation___");
     const NAMES: &'static [&'static str] = &[""];
 }
 impl From<Aggregation> for RawValues {
@@ -320,14 +320,14 @@ pub fn table_schema_schema() -> TableSchema {
 #[test]
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        CREATE TABLE tables ID '__table_schemas_' {
-            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS '__table_id______',
-            column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS '__column_id_____',
-            order U64 DEFAULT 0 LENS 'just a u64 only!',
-            aggregate U64 DEFAULT 0 LENS 'AggregationKind.',
-            modified.seconds U64 DEFAULT 0 LENS 'time::SystemTime',
-            modified.subsecond_nanos U64 DEFAULT 0 LENS 'time::SystemTime',
-            name Bytes DEFAULT '' LENS 'String..........',
+        CREATE TABLE tables ID __table_schemas {
+            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
+            order U64 DEFAULT 0 LENS u64,
+            aggregate U64 DEFAULT 0 LENS __Aggregation,
+            modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
+            modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
+            name Bytes DEFAULT '' LENS String,
             PRIMARY KEY ( table, column, order, aggregate ),
             MAX ( modified.seconds, modified.subsecond_nanos, name ),
         };

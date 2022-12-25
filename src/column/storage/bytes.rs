@@ -50,3 +50,20 @@ impl std::io::Read for Bytes {
         }
     }
 }
+
+impl crate::column::encoding::Read for Bytes {
+    fn seek(&mut self, offset: u64) -> Result<(), crate::column::encoding::StorageError> {
+        if offset < self.buffer.len() as u64 {
+            self.offset = offset as usize;
+            Ok(())
+        } else {
+            Err(
+                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "failed to read_exact")
+                    .into(),
+            )
+        }
+    }
+    fn tell(&mut self) -> Result<u64, crate::column::encoding::StorageError> {
+        Ok(self.offset as u64)
+    }
+}

@@ -62,7 +62,7 @@ pub enum StorageError {
 }
 
 /// A thing that could be the backing store for a column
-pub trait ReadExt: std::io::Read {
+pub trait Read: std::io::Read {
     /// Move to this offset from beginning
     fn seek(&mut self, offset: u64) -> Result<(), StorageError>;
     /// Find the offset from beginning
@@ -103,7 +103,7 @@ pub trait ReadExt: std::io::Read {
         }
     }
 }
-impl<T: std::io::Read + std::io::Seek> ReadExt for T {
+impl<T: std::io::Read + std::io::Seek> Read for T {
     fn seek(&mut self, offset: u64) -> Result<(), StorageError> {
         std::io::Seek::seek(self, std::io::SeekFrom::Start(offset))?;
         Ok(())

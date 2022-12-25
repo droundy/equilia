@@ -11,6 +11,7 @@ repository = "https://github.com/droundy/equilia"
 readme = "README.md"
 
 [dependencies]
+thiserror = "1.0.38"
 
 [dev-dependencies]
 expect-test = "1.4.0"

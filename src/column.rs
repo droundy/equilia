@@ -1,6 +1,12 @@
+//! Our column formats.
+//!
+//! This module will eventually be private.
 use std::ops::Range;
 
 use crate::encoding::{read_u64, write_u64};
+
+pub mod encoding;
+pub mod storage;
 
 /// A raw column
 pub struct RawColumn {

@@ -3,7 +3,7 @@
 
 use std::collections::BTreeSet;
 
-mod column;
+pub mod column;
 mod encoding;
 mod value;
 

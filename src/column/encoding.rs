@@ -63,6 +63,11 @@ pub enum StorageError {
 
 /// A thing that could be the backing store for a column
 pub trait ReadExt: std::io::Read {
+    /// Move to this offset from beginning
+    fn seek(&mut self, offset: u64) -> Result<(), StorageError>;
+    /// Find the offset from beginning
+    fn tell(&mut self) -> Result<u64, StorageError>;
+
     /// Reads a single `u8` value.
     fn read_u8(&mut self) -> Result<u8, StorageError> {
         let mut v = [0];
@@ -98,7 +103,15 @@ pub trait ReadExt: std::io::Read {
         }
     }
 }
-impl<T: std::io::Read> ReadExt for T {}
+impl<T: std::io::Read + std::io::Seek> ReadExt for T {
+    fn seek(&mut self, offset: u64) -> Result<(), StorageError> {
+        std::io::Seek::seek(self, std::io::SeekFrom::Start(offset))?;
+        Ok(())
+    }
+    fn tell(&mut self) -> Result<u64, StorageError> {
+        std::io::Seek::seek(self, std::io::SeekFrom::Current(0)).map_err(StorageError::from)
+    }
+}
 
 /// An extension trait for our encoding
 pub trait WriteExt: std::io::Write {

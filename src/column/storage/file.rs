@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::column::encoding::StorageError;
 
-/// A read-only in-memory buffer
+/// A read-only file that supports concurrent reads. (unix-only)
 #[derive(Debug, Clone)]
 pub struct File {
     file: Arc<std::fs::File>,

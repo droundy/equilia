@@ -67,10 +67,15 @@ impl RawColumn {
 
     /// Decode these bytes as a `RawColumn`
     pub fn decode(buf: Vec<u8>) -> Result<Self, StorageError> {
-        Self::open(Storage::from(buf))
+        Self::open_storage(Storage::from(buf))
     }
 
-    pub(crate) fn open(mut storage: Storage) -> Result<Self, StorageError> {
+    /// Open a column file
+    pub fn open<P: AsRef<std::path::Path>>(path: P) -> Result<Self, StorageError> {
+        Self::open_storage(Storage::open(path)?)
+    }
+
+    pub(crate) fn open_storage(mut storage: Storage) -> Result<Self, StorageError> {
         let magic = storage.read_u64()?;
         storage.seek(0)?;
         let inner = match magic {
@@ -78,6 +83,14 @@ impl RawColumn {
             _ => return Err(StorageError::BadMagic(magic)),
         };
         Ok(RawColumn { inner })
+    }
+}
+
+impl TryFrom<std::fs::File> for RawColumn {
+    type Error = StorageError;
+    fn try_from(value: std::fs::File) -> Result<Self, Self::Error> {
+        let storage = Storage::try_from(value)?;
+        Self::open_storage(storage)
     }
 }
 
@@ -257,7 +270,6 @@ fn encode_bools() {
             (chunk.value, chunk.range.end - chunk.range.start)
         })
         .collect();
-    println!("encoded is {encoded:?}");
     <BoolColumn as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
 
     let storage = Storage::from(encoded.clone());
@@ -268,4 +280,9 @@ fn encode_bools() {
     );
     let c2 = RawColumn::decode(encoded).unwrap();
     assert_eq!(c2.read_bools().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <BoolColumn as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_bools().unwrap().as_slice(), &bools);
 }

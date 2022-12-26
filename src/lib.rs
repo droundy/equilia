@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 
 pub mod column;
-mod encoding;
 mod value;
 
 pub use column::RawColumn;

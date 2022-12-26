@@ -22,17 +22,26 @@ impl From<&[u8]> for Storage {
     }
 }
 
-impl std::io::Read for Storage {
-    #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+impl super::encoding::ReadEncoded for Storage {
+    fn seek(&mut self, offset: u64) -> Result<(), super::encoding::StorageError> {
         match self {
-            Storage::Bytes(b) => b.read(buf),
+            Storage::Bytes(b) => b.seek(offset),
         }
     }
-    #[inline(always)]
-    fn read_exact(&mut self, buf: &mut [u8]) -> std::io::Result<()> {
+
+    fn tell(&self) -> Result<u64, super::encoding::StorageError> {
         match self {
-            Storage::Bytes(b) => b.read_exact(buf),
+            Storage::Bytes(b) => b.tell(),
+        }
+    }
+
+    fn read_exact_at(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> Result<(), super::encoding::StorageError> {
+        match self {
+            Storage::Bytes(b) => b.read_exact_at(buf, offset),
         }
     }
 }

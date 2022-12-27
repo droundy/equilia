@@ -10,11 +10,13 @@ use self::encoding::WriteEncoded;
 mod boolcolumn;
 pub mod encoding;
 pub mod storage;
-mod u64_32column;
+mod u64_16;
+mod u64_32;
 mod u64column;
 
 pub(crate) use boolcolumn::BoolColumn;
-pub(crate) use u64_32column::U64_32Column;
+pub(crate) use u64_16::U64_16Column;
+pub(crate) use u64_32::U64_32Column;
 pub(crate) use u64column::U64Column;
 
 /// A raw column
@@ -56,8 +58,10 @@ impl From<&[u64]> for RawColumn {
         let min = vals.iter().copied().min().unwrap_or_default();
         let inner = if max - min > u32::MAX as u64 {
             RawColumnInner::U64(U64Column::from(vals))
+        } else if max - min > u16::MAX as u64 {
+            RawColumnInner::U64(U64Column::from(vals))
         } else {
-            RawColumnInner::U64_32(U64_32Column::from(vals))
+            RawColumnInner::U64_16(U64_16Column::from(vals))
         };
         RawColumn { inner }
     }
@@ -66,6 +70,7 @@ impl From<&[u64]> for RawColumn {
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
 const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");
+const U64_16_MAGIC: u64 = u64::from_be_bytes(*b"__u64_16");
 
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for
@@ -77,6 +82,7 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
             RawColumnInner::U64(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_16(_) => panic!("does not hold bools"),
             RawColumnInner::U64_32(_) => panic!("does not hold bools"),
         }
     }
@@ -89,6 +95,7 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::U64(b) => column_to_vec(b),
             RawColumnInner::U64_32(b) => column_to_vec(b),
+            RawColumnInner::U64_16(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
     }
@@ -109,6 +116,7 @@ impl RawColumn {
         let inner = match magic {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
             U64_32_MAGIC => RawColumnInner::U64_32(U64_32Column::open(storage)?),
+            U64_16_MAGIC => RawColumnInner::U64_16(U64_16Column::open(storage)?),
             U64_MAGIC => RawColumnInner::U64(U64Column::open(storage)?),
             _ => return Err(StorageError::BadMagic(magic)),
         };
@@ -139,6 +147,7 @@ pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
     U64(U64Column),
     U64_32(U64_32Column),
+    U64_16(U64_16Column),
 }
 
 /// A chunk of identical values.

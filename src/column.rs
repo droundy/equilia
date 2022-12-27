@@ -10,8 +10,10 @@ use self::encoding::WriteEncoded;
 mod boolcolumn;
 pub mod encoding;
 pub mod storage;
+mod u64column;
 
 pub(crate) use boolcolumn::BoolColumn;
+pub(crate) use u64column::U64Column;
 
 /// A raw column
 pub struct RawColumn {
@@ -46,6 +48,9 @@ impl From<&[bool]> for RawColumn {
     }
 }
 
+const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
+const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
+
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for
     /// testing?
@@ -55,6 +60,7 @@ impl RawColumn {
     pub fn read_bools(&self) -> Result<Vec<bool>, StorageError> {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
+            RawColumnInner::U64(b) => column_to_vec(b),
         }
     }
 
@@ -100,6 +106,7 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
 
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
+    U64(U64Column),
 }
 
 /// A chunk of identical values.
@@ -144,5 +151,3 @@ pub(crate) trait IsRawColumn:
         value: impl AsRef<Self::Element>,
     ) -> Result<(), StorageError>;
 }
-
-const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");

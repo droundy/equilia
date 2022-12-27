@@ -60,7 +60,18 @@ impl RawColumn {
     pub fn read_bools(&self) -> Result<Vec<bool>, StorageError> {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
+            RawColumnInner::U64(_) => panic!("does not hold bools"),
+        }
+    }
+    /// This isn't what we'll really want to use, but might be useful for
+    /// testing?
+    ///
+    /// It also illustrates how some common logic can be abstracted away into a
+    /// helper function like the `column_to_vec` below.
+    pub fn read_u64(&self) -> Result<Vec<u64>, StorageError> {
+        match &self.inner {
             RawColumnInner::U64(b) => column_to_vec(b),
+            RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
     }
 
@@ -79,6 +90,7 @@ impl RawColumn {
         storage.seek(0)?;
         let inner = match magic {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
+            U64_MAGIC => RawColumnInner::U64(U64Column::open(storage)?),
             _ => return Err(StorageError::BadMagic(magic)),
         };
         Ok(RawColumn { inner })
@@ -150,4 +162,13 @@ pub(crate) trait IsRawColumn:
         row_number: u64,
         value: impl AsRef<Self::Element>,
     ) -> Result<(), StorageError>;
+
+    /// Returns the (cached) number of rows
+    fn num_rows(&self) -> u64;
+    /// Returns the (cached) number of chunks
+    fn num_chunks(&self) -> u64;
+    /// Returns the (cached) maximum value
+    fn max(&self) -> Self::Element;
+    /// Returns the (cached) minimum value
+    fn min(&self) -> Self::Element;
 }

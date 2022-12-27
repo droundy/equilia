@@ -4,7 +4,8 @@ use super::{Chunk, IsRawColumn, ReadEncoded, Storage, StorageError, WriteEncoded
 pub(crate) struct BoolColumn {
     storage: Storage,
     current_row: u64,
-    num_rows: u64,
+    n_rows: u64,
+    n_chunks: u64,
     last: bool,
 }
 
@@ -26,7 +27,7 @@ impl Iterator for BoolColumn {
 
 impl BoolColumn {
     fn transposed_next(&mut self) -> Result<Option<Chunk<bool>>, StorageError> {
-        if self.current_row == self.num_rows {
+        if self.current_row == self.n_rows {
             return Ok(None);
         }
         let num = self.storage.read_usigned()?;
@@ -41,6 +42,20 @@ impl BoolColumn {
 }
 impl IsRawColumn for BoolColumn {
     type Element = bool;
+
+    fn num_rows(&self) -> u64 {
+        self.n_rows
+    }
+    fn num_chunks(&self) -> u64 {
+        self.n_chunks
+    }
+    fn max(&self) -> Self::Element {
+        self.n_chunks > 1 || !self.last
+    }
+    fn min(&self) -> Self::Element {
+        !(self.n_chunks > 1) && self.last
+    }
+
     fn encode<W: WriteEncoded>(
         out: &mut W,
         input: &[(Self::Element, u64)],
@@ -50,6 +65,7 @@ impl IsRawColumn for BoolColumn {
         }
         out.write_u64(BOOL_MAGIC)?;
         out.write_unsigned(input.iter().map(|x| x.1).sum())?;
+        out.write_unsigned(input.len() as u64)?;
         out.write_u8(!input[0].0 as u8)?;
         for (_, num) in input.iter() {
             out.write_unsigned(*num)?;
@@ -64,12 +80,14 @@ impl IsRawColumn for BoolColumn {
         if magic != BOOL_MAGIC {
             return Err(StorageError::BadMagic(magic));
         }
-        let num_rows = storage.read_usigned()?;
+        let n_rows = storage.read_usigned()?;
+        let n_chunks = storage.read_usigned()?;
         let last = storage.read_u8()? == 1;
         Ok(BoolColumn {
             storage,
             current_row: 0,
-            num_rows,
+            n_chunks,
+            n_rows,
             last,
         })
     }
@@ -92,15 +110,8 @@ impl IsRawColumn for BoolColumn {
 
 impl TryFrom<Storage> for BoolColumn {
     type Error = StorageError;
-    fn try_from(mut storage: Storage) -> Result<Self, Self::Error> {
-        let num_rows = storage.read_usigned()?;
-        let last = storage.read_u8()? == 1;
-        Ok(BoolColumn {
-            storage,
-            last,
-            num_rows,
-            current_row: 0,
-        })
+    fn try_from(storage: Storage) -> Result<Self, Self::Error> {
+        Self::open(storage)
     }
 }
 

@@ -10,9 +10,11 @@ use self::encoding::WriteEncoded;
 mod boolcolumn;
 pub mod encoding;
 pub mod storage;
+mod u64_32column;
 mod u64column;
 
 pub(crate) use boolcolumn::BoolColumn;
+pub(crate) use u64_32column::U64_32Column;
 pub(crate) use u64column::U64Column;
 
 /// A raw column
@@ -50,6 +52,7 @@ impl From<&[bool]> for RawColumn {
 
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
+const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");
 
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for
@@ -61,6 +64,7 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
             RawColumnInner::U64(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_32(_) => panic!("does not hold bools"),
         }
     }
     /// This isn't what we'll really want to use, but might be useful for
@@ -71,6 +75,7 @@ impl RawColumn {
     pub fn read_u64(&self) -> Result<Vec<u64>, StorageError> {
         match &self.inner {
             RawColumnInner::U64(b) => column_to_vec(b),
+            RawColumnInner::U64_32(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
     }
@@ -90,6 +95,7 @@ impl RawColumn {
         storage.seek(0)?;
         let inner = match magic {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
+            U64_32_MAGIC => RawColumnInner::U64_32(U64_32Column::open(storage)?),
             U64_MAGIC => RawColumnInner::U64(U64Column::open(storage)?),
             _ => return Err(StorageError::BadMagic(magic)),
         };
@@ -119,6 +125,7 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
     U64(U64Column),
+    U64_32(U64_32Column),
 }
 
 /// A chunk of identical values.

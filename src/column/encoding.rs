@@ -17,6 +17,9 @@ pub enum StorageError {
     /// Bad magic
     #[error("Bad magic: {}", pretty_magic(.0))]
     BadMagic(u64),
+    /// Out of bounds
+    #[error("Out of bounds")]
+    OutOfBounds,
 }
 
 fn pretty_magic(m: &u64) -> String {

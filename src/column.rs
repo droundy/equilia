@@ -7,8 +7,11 @@ use storage::Storage;
 
 use self::encoding::WriteEncoded;
 
+mod boolcolumn;
 pub mod encoding;
 pub mod storage;
+
+pub(crate) use boolcolumn::BoolColumn;
 
 /// A raw column
 pub struct RawColumn {
@@ -33,16 +36,6 @@ fn run_length_encode<T: PartialEq + Clone>(elems: &[T]) -> Vec<(T, u64)> {
         }
     }
     out
-}
-
-impl From<&[bool]> for BoolColumn {
-    fn from(bools: &[bool]) -> Self {
-        let mut bytes = Vec::<u8>::new();
-        BoolColumn::encode(&mut bytes, &run_length_encode(bools)).unwrap();
-        println!("encoded is {bytes:?}");
-        let storage = Storage::from(bytes);
-        BoolColumn::open(storage).unwrap()
-    }
 }
 
 impl From<&[bool]> for RawColumn {
@@ -109,14 +102,6 @@ pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
 }
 
-#[derive(Clone)]
-pub(crate) struct BoolColumn {
-    storage: Storage,
-    current_row: u64,
-    num_rows: u64,
-    last: bool,
-}
-
 /// A chunk of identical values.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Chunk<T> {
@@ -160,129 +145,4 @@ pub(crate) trait IsRawColumn:
     ) -> Result<(), StorageError>;
 }
 
-/// An offset into a Column
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Offset(usize);
-
-impl Iterator for BoolColumn {
-    type Item = Result<Chunk<bool>, StorageError>;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.transposed_next().transpose()
-    }
-}
-
-impl BoolColumn {
-    fn transposed_next(&mut self) -> Result<Option<Chunk<bool>>, StorageError> {
-        if self.current_row == self.num_rows {
-            return Ok(None);
-        }
-        let num = self.storage.read_usigned()?;
-        let current_row = self.current_row;
-        self.current_row = current_row + num;
-        self.last = !self.last;
-        Ok(Some(Chunk {
-            value: self.last,
-            range: current_row..self.current_row,
-        }))
-    }
-}
-
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
-impl IsRawColumn for BoolColumn {
-    type Element = bool;
-    fn encode<W: WriteEncoded>(
-        out: &mut W,
-        input: &[(Self::Element, u64)],
-    ) -> Result<(), StorageError> {
-        if input.is_empty() {
-            return Ok(());
-        }
-        out.write_u64(BOOL_MAGIC)?;
-        out.write_unsigned(input.iter().map(|x| x.1).sum())?;
-        out.write_u8(!input[0].0 as u8)?;
-        for (_, num) in input.iter() {
-            out.write_unsigned(*num)?;
-        }
-        Ok(())
-    }
-
-    fn open(mut storage: Storage) -> Result<Self, StorageError> {
-        println!("offset starts at {}", storage.tell().unwrap());
-        let magic = storage.read_u64()?;
-        println!("after magic {}", storage.tell().unwrap());
-        if magic != BOOL_MAGIC {
-            return Err(StorageError::BadMagic(magic));
-        }
-        let num_rows = storage.read_usigned()?;
-        let last = storage.read_u8()? == 1;
-        Ok(BoolColumn {
-            storage,
-            current_row: 0,
-            num_rows,
-            last,
-        })
-    }
-
-    fn tell(&self) -> Result<u64, StorageError> {
-        self.storage.tell()
-    }
-
-    fn seek(
-        &mut self,
-        offset: u64,
-        row_number: u64,
-        value: impl AsRef<Self::Element>,
-    ) -> Result<(), StorageError> {
-        self.current_row = row_number;
-        self.last = !*value.as_ref();
-        self.storage.seek(offset)
-    }
-}
-
-impl TryFrom<Storage> for BoolColumn {
-    type Error = StorageError;
-    fn try_from(mut storage: Storage) -> Result<Self, Self::Error> {
-        let num_rows = storage.read_usigned()?;
-        let last = storage.read_u8()? == 1;
-        Ok(BoolColumn {
-            storage,
-            last,
-            num_rows,
-            current_row: 0,
-        })
-    }
-}
-
-#[test]
-fn encode_bools() {
-    let bools = [true, true, false, true, true, true];
-    let bc = BoolColumn::from(&bools[..]);
-    let c = RawColumn {
-        inner: RawColumnInner::Bool(bc.clone()),
-    };
-    assert_eq!(c.read_bools().unwrap().as_slice(), &bools);
-
-    let mut encoded: Vec<u8> = Vec::new();
-    let chunks: Vec<(bool, u64)> = bc
-        .clone()
-        .map(|chunk| {
-            let chunk = chunk.unwrap();
-            (chunk.value, chunk.range.end - chunk.range.start)
-        })
-        .collect();
-    <BoolColumn as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
-
-    let storage = Storage::from(encoded.clone());
-    let bc2 = BoolColumn::open(storage.clone()).unwrap();
-    assert_eq!(
-        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
-        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
-    );
-    let c2 = RawColumn::decode(encoded).unwrap();
-    assert_eq!(c2.read_bools().unwrap().as_slice(), &bools);
-
-    let mut f = tempfile::tempfile().unwrap();
-    <BoolColumn as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
-    let c = RawColumn::try_from(f).unwrap();
-    assert_eq!(c.read_bools().unwrap().as_slice(), &bools);
-}

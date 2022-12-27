@@ -50,6 +50,19 @@ impl From<&[bool]> for RawColumn {
     }
 }
 
+impl From<&[u64]> for RawColumn {
+    fn from(vals: &[u64]) -> Self {
+        let max = vals.iter().copied().max().unwrap_or_default();
+        let min = vals.iter().copied().min().unwrap_or_default();
+        let inner = if max - min > u32::MAX as u64 {
+            RawColumnInner::U64(U64Column::from(vals))
+        } else {
+            RawColumnInner::U64_32(U64_32Column::from(vals))
+        };
+        RawColumn { inner }
+    }
+}
+
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
 const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");

@@ -122,13 +122,11 @@ impl TryFrom<Storage> for U64Column {
 
 #[test]
 fn encode_u64() {
-    use super::{RawColumn, RawColumnInner};
+    use super::RawColumn;
 
-    let bools = [1, 1, 1, 1, 2, 2, 16, 1];
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1, 1 << 33, u64::MAX];
     let bc = U64Column::from(&bools[..]);
-    let c = RawColumn {
-        inner: RawColumnInner::U64(bc.clone()),
-    };
+    let c = RawColumn::from(&bools[..]);
     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
 
     let mut encoded: Vec<u8> = Vec::new();

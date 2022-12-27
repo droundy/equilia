@@ -12,7 +12,9 @@ pub mod encoding;
 pub mod storage;
 mod u64_16;
 mod u64_32;
+mod u64_8d;
 mod u64column;
+mod u64dense;
 
 pub(crate) use boolcolumn::BoolColumn;
 pub(crate) use u64_16::U64_16Column;
@@ -56,10 +58,19 @@ impl From<&[u64]> for RawColumn {
     fn from(vals: &[u64]) -> Self {
         let max = vals.iter().copied().max().unwrap_or_default();
         let min = vals.iter().copied().min().unwrap_or_default();
+        let longest_run = run_length_encode(vals)
+            .into_iter()
+            .map(|x| x.1)
+            .max()
+            .unwrap_or_default();
         let inner = if max - min > u32::MAX as u64 {
-            RawColumnInner::U64(U64Column::from(vals))
+            if longest_run < 2 {
+                RawColumnInner::U64Dense(u64dense::Column::from(vals))
+            } else {
+                RawColumnInner::U64(U64Column::from(vals))
+            }
         } else if max - min > u16::MAX as u64 {
-            RawColumnInner::U64(U64Column::from(vals))
+            RawColumnInner::U64_32(U64_32Column::from(vals))
         } else {
             RawColumnInner::U64_16(U64_16Column::from(vals))
         };
@@ -69,8 +80,10 @@ impl From<&[u64]> for RawColumn {
 
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
+const U64_DENSE_MAGIC: u64 = u64::from_be_bytes(*b"__u64_d_");
 const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");
 const U64_16_MAGIC: u64 = u64::from_be_bytes(*b"__u64_16");
+const U64_8D_MAGIC: u64 = u64::from_be_bytes(*b"u64__8_d");
 
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for
@@ -84,6 +97,8 @@ impl RawColumn {
             RawColumnInner::U64(_) => panic!("does not hold bools"),
             RawColumnInner::U64_16(_) => panic!("does not hold bools"),
             RawColumnInner::U64_32(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_8d(_) => panic!("does not hold bools"),
+            RawColumnInner::U64Dense(_) => panic!("does not hold bools"),
         }
     }
     /// This isn't what we'll really want to use, but might be useful for
@@ -96,6 +111,8 @@ impl RawColumn {
             RawColumnInner::U64(b) => column_to_vec(b),
             RawColumnInner::U64_32(b) => column_to_vec(b),
             RawColumnInner::U64_16(b) => column_to_vec(b),
+            RawColumnInner::U64Dense(b) => column_to_vec(b),
+            RawColumnInner::U64_8d(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
     }
@@ -117,6 +134,8 @@ impl RawColumn {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
             U64_32_MAGIC => RawColumnInner::U64_32(U64_32Column::open(storage)?),
             U64_16_MAGIC => RawColumnInner::U64_16(U64_16Column::open(storage)?),
+            U64_DENSE_MAGIC => RawColumnInner::U64Dense(u64dense::Column::open(storage)?),
+            U64_8D_MAGIC => RawColumnInner::U64_8d(u64_8d::Column::open(storage)?),
             U64_MAGIC => RawColumnInner::U64(U64Column::open(storage)?),
             _ => return Err(StorageError::BadMagic(magic)),
         };
@@ -146,6 +165,8 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
     U64(U64Column),
+    U64Dense(u64dense::Column),
+    U64_8d(u64_8d::Column),
     U64_32(U64_32Column),
     U64_16(U64_16Column),
 }

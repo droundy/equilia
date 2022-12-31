@@ -13,6 +13,7 @@ pub mod storage;
 mod u64_16;
 mod u64_32;
 mod u64_8d;
+pub mod u64_generic;
 mod u64column;
 mod u64dense;
 
@@ -84,6 +85,7 @@ const U64_DENSE_MAGIC: u64 = u64::from_be_bytes(*b"__u64_d_");
 const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");
 const U64_16_MAGIC: u64 = u64::from_be_bytes(*b"__u64_16");
 const U64_8D_MAGIC: u64 = u64::from_be_bytes(*b"u64__8_d");
+const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"u64__gen");
 
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for

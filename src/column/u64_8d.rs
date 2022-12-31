@@ -32,7 +32,7 @@ impl Column {
         if self.current_row == self.n_rows {
             return Ok(None);
         }
-        let value = self.storage.read_u64()?;
+        let value = self.storage.read_u8()? as u64 + self.v_min;
         let current_row = self.current_row;
         self.current_row = current_row + 1;
 
@@ -68,11 +68,16 @@ impl IsRawColumn for Column {
         out.write_u64(MAGIC)?;
         out.write_u64(input.iter().map(|x| x.1).sum())?;
         out.write_u64(input.len() as u64)?;
-        out.write_u64(input.iter().map(|(v, _)| *v).min().unwrap_or(0))?;
-        out.write_u64(input.iter().map(|(v, _)| *v).max().unwrap_or(0))?;
+        let min = input.iter().map(|(v, _)| *v).min().unwrap_or(0);
+        let max = input.iter().map(|(v, _)| *v).max().unwrap_or(0);
+        if max - min > u8::MAX as u64 {
+            return Err(StorageError::OutOfBounds);
+        }
+        out.write_u64(min)?;
+        out.write_u64(max)?;
         for &(v, num) in input.iter() {
             for _ in 0..num {
-                out.write_u64(v)?;
+                out.write_u8((v - min) as u8)?;
             }
         }
         Ok(())
@@ -123,7 +128,7 @@ impl TryFrom<Storage> for Column {
 fn encode_u64() {
     use super::RawColumn;
 
-    let bools = [1, 1, 1, 1, 2, 2, 16, 1, 1 << 33, u64::MAX];
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1];
     let bc = Column::from(&bools[..]);
     let c = RawColumn::from(&bools[..]);
     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);

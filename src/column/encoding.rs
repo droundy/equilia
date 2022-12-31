@@ -8,6 +8,38 @@ const U16_CODE: u8 = 253;
 const U32_CODE: u8 = 254;
 const U64_CODE: u8 = 255;
 
+/// Size to store a u64 as
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BitWidth {
+    /// Zero bits, value must be 1
+    IsOne = 0,
+    /// 1 byte
+    U8 = 1,
+    /// 2 bytes
+    U16 = 2,
+    /// 4 bytes
+    U32 = 4,
+    /// 8 bytes
+    U64 = 8,
+    /// Variable number of bytes
+    Variable = 255,
+}
+impl BitWidth {
+    /// Deserialize a BitWidth
+    pub const fn new(v: u8) -> Option<BitWidth> {
+        use BitWidth::*;
+        match () {
+            _ if v == IsOne as u8 => Some(IsOne),
+            _ if v == U8 as u8 => Some(U8),
+            _ if v == U16 as u8 => Some(U16),
+            _ if v == U32 as u8 => Some(U32),
+            _ if v == U64 as u8 => Some(U64),
+            _ if v == Variable as u8 => Some(Variable),
+            _ => None,
+        }
+    }
+}
+
 /// An error of any sort
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -77,6 +109,18 @@ pub trait ReadEncoded {
         self.read_exact(&mut v)?;
         Ok(u64::from_be_bytes(v))
     }
+    /// Reads a single 8-byte `u64` value.
+    #[inline(always)]
+    fn read_bitwidth(&mut self, bitwidth: BitWidth) -> Result<u64, StorageError> {
+        match bitwidth {
+            BitWidth::IsOne => Ok(1),
+            BitWidth::U8 => self.read_u8().map(|v| v as u64),
+            BitWidth::U16 => self.read_u16().map(|v| v as u64),
+            BitWidth::U32 => self.read_u32().map(|v| v as u64),
+            BitWidth::U64 => self.read_u64(),
+            BitWidth::Variable => self.read_usigned(),
+        }
+    }
     /// Reads an encoded unsigned value, which might take up to 9 bytes.
     fn read_usigned(&mut self) -> Result<u64, StorageError> {
         let b = self.read_u8()?;
@@ -120,6 +164,43 @@ pub trait WriteEncoded: std::io::Write {
         } else {
             self.write_u8(U64_CODE)?;
             self.write_u64(v)
+        }
+    }
+    /// Write the value with the specified number of bytes
+    ///
+    /// This returns an error if the value does not fit in the specified range.
+    fn write_bitwidth(&mut self, bitwidth: BitWidth, v: u64) -> Result<(), StorageError> {
+        match bitwidth {
+            BitWidth::IsOne => {
+                if v != 1 {
+                    Err(StorageError::OutOfBounds)
+                } else {
+                    Ok(())
+                }
+            }
+            BitWidth::U8 => {
+                if let Ok(v) = v.try_into() {
+                    self.write_u8(v)
+                } else {
+                    Err(StorageError::OutOfBounds)
+                }
+            }
+            BitWidth::U16 => {
+                if let Ok(v) = v.try_into() {
+                    self.write_u16(v)
+                } else {
+                    Err(StorageError::OutOfBounds)
+                }
+            }
+            BitWidth::U32 => {
+                if let Ok(v) = v.try_into() {
+                    self.write_u32(v)
+                } else {
+                    Err(StorageError::OutOfBounds)
+                }
+            }
+            BitWidth::U64 => self.write_u64(v),
+            BitWidth::Variable => self.write_unsigned(v),
         }
     }
 }

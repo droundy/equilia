@@ -2,6 +2,7 @@
 //! A nice columnar data store.
 
 mod lens;
+mod parser;
 mod schema;
 mod value;
 

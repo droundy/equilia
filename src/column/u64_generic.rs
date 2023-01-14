@@ -40,6 +40,61 @@ impl Format {
     }
 }
 
+pub(crate) type VariableVariable = U64<
+    {
+        Format {
+            value: BitWidth::Variable,
+            runlength: BitWidth::Variable,
+        }
+        .to_bytes()
+    },
+>;
+
+pub(crate) type VariableOne = U64<
+    {
+        Format {
+            value: BitWidth::Variable,
+            runlength: BitWidth::IsOne,
+        }
+        .to_bytes()
+    },
+>;
+
+pub(crate) type U32Variable = U64<
+    {
+        Format {
+            value: BitWidth::U32,
+            runlength: BitWidth::Variable,
+        }
+        .to_bytes()
+    },
+>;
+
+pub(crate) type U16Variable = U64<
+    {
+        Format {
+            value: BitWidth::U16,
+            runlength: BitWidth::Variable,
+        }
+        .to_bytes()
+    },
+>;
+
+impl From<Format> for u64 {
+    fn from(f: Format) -> Self {
+        f.to_bytes()
+    }
+}
+
+impl Format {
+    const fn to_bytes(self) -> u64 {
+        let mut bytes = [0; 8];
+        bytes[0] = self.value as u8;
+        bytes[1] = self.runlength as u8;
+        u64::from_be_bytes(bytes)
+    }
+}
+
 impl<const F: u64> From<&[u64]> for U64<F> {
     /// Create a column
     fn from(vals: &[u64]) -> Self {
@@ -57,6 +112,7 @@ impl<const F: u64> Iterator for U64<F> {
 }
 
 impl<const F: u64> U64<F> {
+    pub(crate) const MAGIC: u64 = F ^ U64_GENERIC_MAGIC;
     fn transposed_next(&mut self) -> Result<Option<Chunk<u64>>, StorageError> {
         if self.current_row == self.n_rows {
             return Ok(None);

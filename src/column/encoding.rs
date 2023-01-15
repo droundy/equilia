@@ -38,6 +38,18 @@ impl BitWidth {
             _ => None,
         }
     }
+
+    /// The maximum representable value
+    pub const fn max(self) -> u64 {
+        match self {
+            BitWidth::IsOne => 1,
+            BitWidth::U8 => u8::MAX as u64,
+            BitWidth::U16 => u16::MAX as u64,
+            BitWidth::U32 => u32::MAX as u64,
+            BitWidth::U64 => u64::MAX,
+            BitWidth::Variable => u64::MAX,
+        }
+    }
 }
 
 /// An error of any sort

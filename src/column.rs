@@ -14,7 +14,6 @@ mod u64_16;
 mod u64_32;
 pub mod u64_generic;
 mod u64column;
-mod u64dense;
 
 pub(crate) use boolcolumn::BoolColumn;
 
@@ -77,7 +76,6 @@ impl From<&[u64]> for RawColumn {
 
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_MAGIC: u64 = u64::from_be_bytes(*b"__u64___");
-const U64_DENSE_MAGIC: u64 = u64::from_be_bytes(*b"__u64_d_");
 const U64_32_MAGIC: u64 = u64::from_be_bytes(*b"__u64_32");
 const U64_16_MAGIC: u64 = u64::from_be_bytes(*b"__u64_16");
 const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"u64__gen");

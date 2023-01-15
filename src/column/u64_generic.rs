@@ -99,7 +99,7 @@ impl<const F: u64> From<&[u64]> for U64<F> {
     /// Create a column
     fn from(vals: &[u64]) -> Self {
         let mut bytes = Vec::<u8>::new();
-        Self::encode(&mut bytes, &super::run_length_encode(vals)).unwrap();
+        Self::encode(&mut bytes, &super::run_length_encode(vals)).expect("error encoding");
         let storage = Storage::from(bytes);
         Self::open(storage).unwrap()
     }
@@ -149,21 +149,20 @@ impl<const F: u64> IsRawColumn for U64<F> {
         out: &mut W,
         input: &[(Self::Element, u64)],
     ) -> Result<(), StorageError> {
+        let format = Format::from_bytes(F)?;
         if input.is_empty() {
             return Ok(());
         }
-        out.write_u64(U64_GENERIC_MAGIC)?;
-        out.write_u64(F)?;
+        out.write_u64(U64_GENERIC_MAGIC ^ F)?;
         out.write_u64(input.iter().map(|x| x.1).sum())?;
         out.write_u64(input.len() as u64)?;
         let min = input.iter().map(|(v, _)| *v).min().unwrap_or(0);
         let max = input.iter().map(|(v, _)| *v).max().unwrap_or(0);
-        if max - min > u32::MAX as u64 {
+        if max - min > format.value.max() {
             return Err(StorageError::OutOfBounds);
         }
         out.write_u64(min)?;
         out.write_u64(max)?;
-        let format = Format::from_bytes(F)?;
         for &(v, num) in input.iter() {
             out.write_bitwidth(format.runlength, num)?;
             out.write_bitwidth(format.value, v - min)?;
@@ -175,11 +174,7 @@ impl<const F: u64> IsRawColumn for U64<F> {
         println!("offset starts at {}", storage.tell().unwrap());
         let magic = storage.read_u64()?;
         println!("after magic {}", storage.tell().unwrap());
-        if magic != U64_GENERIC_MAGIC {
-            return Err(StorageError::BadMagic(magic));
-        }
-        if F != storage.read_u64()? {
-            // FIXME need another error type here
+        if magic != U64_GENERIC_MAGIC ^ F {
             return Err(StorageError::BadMagic(magic));
         }
         let n_rows = storage.read_u64()?;
@@ -218,36 +213,36 @@ impl<const F: u64> TryFrom<Storage> for U64<F> {
     }
 }
 
-// #[test]
-// fn encode_u64() {
-//     use super::RawColumn;
+#[test]
+fn encode_u64_dense() {
+    use super::RawColumn;
 
-//     let bools = [1, 1, 1, 1, 2, 2, 16, 1, u32::MAX as u64 + 1];
-//     let bc = U64::from(&bools[..]);
-//     let c = RawColumn::from(&bools[..]);
-//     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+    let bools = [1, 2, 16, 1, 1 << 33, u64::MAX];
+    let bc = VariableOne::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
 
-//     let mut encoded: Vec<u8> = Vec::new();
-//     let chunks: Vec<(u64, u64)> = bc
-//         .clone()
-//         .map(|chunk| {
-//             let chunk = chunk.unwrap();
-//             (chunk.value, chunk.range.end - chunk.range.start)
-//         })
-//         .collect();
-//     <U64 as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <VariableOne as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
 
-//     let storage = Storage::from(encoded.clone());
-//     let bc2 = U64::open(storage.clone()).unwrap();
-//     assert_eq!(
-//         bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
-//         bc.map(|x| x.unwrap()).collect::<Vec<_>>()
-//     );
-//     let c2 = RawColumn::decode(encoded).unwrap();
-//     assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+    let storage = Storage::from(encoded.clone());
+    let bc2 = VariableOne::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
 
-//     let mut f = tempfile::tempfile().unwrap();
-//     <U64 as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
-//     let c = RawColumn::try_from(f).unwrap();
-//     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
-// }
+    let mut f = tempfile::tempfile().unwrap();
+    <VariableOne as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}

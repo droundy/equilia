@@ -22,7 +22,7 @@ pub enum BitWidth {
     /// 8 bytes
     U64 = 8,
     /// Variable number of bytes
-    Variable = 255,
+    Variable = 9,
 }
 impl BitWidth {
     /// Deserialize a BitWidth

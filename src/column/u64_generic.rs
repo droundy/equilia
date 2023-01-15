@@ -79,6 +79,25 @@ pub(crate) type U16Variable = U64<
         .to_bytes()
     },
 >;
+pub(crate) type U32One = U64<
+    {
+        Format {
+            value: BitWidth::U32,
+            runlength: BitWidth::IsOne,
+        }
+        .to_bytes()
+    },
+>;
+
+pub(crate) type U16One = U64<
+    {
+        Format {
+            value: BitWidth::U16,
+            runlength: BitWidth::IsOne,
+        }
+        .to_bytes()
+    },
+>;
 
 impl From<Format> for u64 {
     fn from(f: Format) -> Self {
@@ -243,6 +262,176 @@ fn encode_u64_dense() {
 
     let mut f = tempfile::tempfile().unwrap();
     <VariableOne as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn test_u64_big() {
+    use super::RawColumn;
+
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1, 1 << 33, u64::MAX];
+    let bc = VariableVariable::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <VariableVariable as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = VariableVariable::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <VariableVariable as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn test_encode_u16() {
+    use super::RawColumn;
+
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1, u16::MAX as u64 + 1];
+    let bc = U16Variable::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U16Variable as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U16Variable::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U16Variable as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn encode_u32() {
+    use super::RawColumn;
+
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1, u32::MAX as u64 + 1];
+    let bc = U32Variable::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U32Variable as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U32Variable::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U32Variable as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn encode_u32_1() {
+    use super::RawColumn;
+
+    let bools = [1, 2, 16, 1, u32::MAX as u64 + 1];
+    let bc = U32One::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U32One as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U32One::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U32One as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn encode_u16_1() {
+    use super::RawColumn;
+
+    let bools = [1, 2, 16, 1, u16::MAX as u64 + 1];
+    let bc = U16One::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U16One as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U16One::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U16One as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
     let c = RawColumn::try_from(f).unwrap();
     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
 }

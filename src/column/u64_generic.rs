@@ -99,6 +99,26 @@ pub(crate) type U16One = U64<
     },
 >;
 
+pub(crate) type U8Variable = U64<
+    {
+        Format {
+            value: BitWidth::U8,
+            runlength: BitWidth::Variable,
+        }
+        .to_bytes()
+    },
+>;
+
+pub(crate) type U8One = U64<
+    {
+        Format {
+            value: BitWidth::U8,
+            runlength: BitWidth::IsOne,
+        }
+        .to_bytes()
+    },
+>;
+
 impl From<Format> for u64 {
     fn from(f: Format) -> Self {
         f.to_bytes()
@@ -432,6 +452,74 @@ fn encode_u16_1() {
 
     let mut f = tempfile::tempfile().unwrap();
     <U16One as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn encode_u8() {
+    use super::RawColumn;
+
+    let bools = [1, 1, 1, 1, 2, 2, 16, 1, u8::MAX as u64 + 1];
+    let bc = U8Variable::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U8Variable as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U8Variable::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U8Variable as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let c = RawColumn::try_from(f).unwrap();
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+}
+
+#[test]
+fn encode_u8_1() {
+    use super::RawColumn;
+
+    let bools = [1, 2, 16, 1, u8::MAX as u64 + 1];
+    let bc = U8One::from(&bools[..]);
+    let c = RawColumn::from(&bools[..]);
+    assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(u64, u64)> = bc
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <U8One as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let bc2 = U8One::open(storage.clone()).unwrap();
+    assert_eq!(
+        bc2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        bc.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let c2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(c2.read_u64().unwrap().as_slice(), &bools);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <U8One as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
     let c = RawColumn::try_from(f).unwrap();
     assert_eq!(c.read_u64().unwrap().as_slice(), &bools);
 }

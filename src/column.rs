@@ -68,11 +68,17 @@ impl From<&[u64]> for RawColumn {
             } else {
                 RawColumnInner::U64_32(u64_generic::U32Variable::from(vals))
             }
-        } else {
+        } else if max - min > u8::MAX as u64 {
             if longest_run < 2 {
                 RawColumnInner::U64_16_1(u64_generic::U16One::from(vals))
             } else {
                 RawColumnInner::U64_16(u64_generic::U16Variable::from(vals))
+            }
+        } else {
+            if longest_run < 2 {
+                RawColumnInner::U64_8_1(u64_generic::U8One::from(vals))
+            } else {
+                RawColumnInner::U64_8(u64_generic::U8Variable::from(vals))
             }
         };
         RawColumn { inner }
@@ -92,9 +98,11 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
             RawColumnInner::U64(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_8(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_8_1(_) => panic!("does not hold bools"),
             RawColumnInner::U64_16(_) => panic!("does not hold bools"),
-            RawColumnInner::U64_32(_) => panic!("does not hold bools"),
             RawColumnInner::U64_16_1(_) => panic!("does not hold bools"),
+            RawColumnInner::U64_32(_) => panic!("does not hold bools"),
             RawColumnInner::U64_32_1(_) => panic!("does not hold bools"),
             RawColumnInner::U64Dense(_) => panic!("does not hold bools"),
         }
@@ -108,9 +116,11 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::U64(b) => column_to_vec(b),
             RawColumnInner::U64_32(b) => column_to_vec(b),
-            RawColumnInner::U64_16(b) => column_to_vec(b),
             RawColumnInner::U64_32_1(b) => column_to_vec(b),
+            RawColumnInner::U64_16(b) => column_to_vec(b),
             RawColumnInner::U64_16_1(b) => column_to_vec(b),
+            RawColumnInner::U64_8(b) => column_to_vec(b),
+            RawColumnInner::U64_8_1(b) => column_to_vec(b),
             RawColumnInner::U64Dense(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
@@ -134,14 +144,20 @@ impl RawColumn {
             u64_generic::U32Variable::MAGIC => {
                 RawColumnInner::U64_32(u64_generic::U32Variable::open(storage)?)
             }
-            u64_generic::U16Variable::MAGIC => {
-                RawColumnInner::U64_16(u64_generic::U16Variable::open(storage)?)
-            }
             u64_generic::U32One::MAGIC => {
                 RawColumnInner::U64_32_1(u64_generic::U32One::open(storage)?)
             }
+            u64_generic::U16Variable::MAGIC => {
+                RawColumnInner::U64_16(u64_generic::U16Variable::open(storage)?)
+            }
             u64_generic::U16One::MAGIC => {
                 RawColumnInner::U64_16_1(u64_generic::U16One::open(storage)?)
+            }
+            u64_generic::U8Variable::MAGIC => {
+                RawColumnInner::U64_8(u64_generic::U8Variable::open(storage)?)
+            }
+            u64_generic::U8One::MAGIC => {
+                RawColumnInner::U64_8_1(u64_generic::U8One::open(storage)?)
             }
             u64_generic::VariableOne::MAGIC => {
                 RawColumnInner::U64Dense(u64_generic::VariableOne::open(storage)?)
@@ -179,9 +195,11 @@ pub(crate) enum RawColumnInner {
     U64(u64_generic::VariableVariable),
     U64Dense(u64_generic::VariableOne),
     U64_32(u64_generic::U32Variable),
-    U64_16(u64_generic::U16Variable),
     U64_32_1(u64_generic::U32One),
+    U64_16(u64_generic::U16Variable),
     U64_16_1(u64_generic::U16One),
+    U64_8(u64_generic::U8Variable),
+    U64_8_1(u64_generic::U8One),
 }
 
 /// A chunk of identical values.

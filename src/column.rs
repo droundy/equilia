@@ -58,9 +58,9 @@ impl From<&[u64]> for RawColumn {
             .unwrap_or_default();
         let inner = if max - min > u32::MAX as u64 {
             if longest_run < 2 {
-                RawColumnInner::U64Dense(u64_generic::VariableOne::from(vals))
+                RawColumnInner::U64V1(u64_generic::VariableOne::from(vals))
             } else {
-                RawColumnInner::U64(u64_generic::VariableVariable::from(vals))
+                RawColumnInner::U64VV(u64_generic::VariableVariable::from(vals))
             }
         } else if max - min > u16::MAX as u64 {
             if longest_run < 2 {
@@ -97,14 +97,14 @@ impl RawColumn {
     pub fn read_bools(&self) -> Result<Vec<bool>, StorageError> {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
-            RawColumnInner::U64(_) => panic!("does not hold bools"),
+            RawColumnInner::U64VV(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8_1(_) => panic!("does not hold bools"),
             RawColumnInner::U64_16(_) => panic!("does not hold bools"),
             RawColumnInner::U64_16_1(_) => panic!("does not hold bools"),
             RawColumnInner::U64_32(_) => panic!("does not hold bools"),
             RawColumnInner::U64_32_1(_) => panic!("does not hold bools"),
-            RawColumnInner::U64Dense(_) => panic!("does not hold bools"),
+            RawColumnInner::U64V1(_) => panic!("does not hold bools"),
         }
     }
     /// This isn't what we'll really want to use, but might be useful for
@@ -114,14 +114,14 @@ impl RawColumn {
     /// helper function like the `column_to_vec` below.
     pub fn read_u64(&self) -> Result<Vec<u64>, StorageError> {
         match &self.inner {
-            RawColumnInner::U64(b) => column_to_vec(b),
+            RawColumnInner::U64VV(b) => column_to_vec(b),
             RawColumnInner::U64_32(b) => column_to_vec(b),
             RawColumnInner::U64_32_1(b) => column_to_vec(b),
             RawColumnInner::U64_16(b) => column_to_vec(b),
             RawColumnInner::U64_16_1(b) => column_to_vec(b),
             RawColumnInner::U64_8(b) => column_to_vec(b),
             RawColumnInner::U64_8_1(b) => column_to_vec(b),
-            RawColumnInner::U64Dense(b) => column_to_vec(b),
+            RawColumnInner::U64V1(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
         }
     }
@@ -160,10 +160,10 @@ impl RawColumn {
                 RawColumnInner::U64_8_1(u64_generic::U8One::open(storage)?)
             }
             u64_generic::VariableOne::MAGIC => {
-                RawColumnInner::U64Dense(u64_generic::VariableOne::open(storage)?)
+                RawColumnInner::U64V1(u64_generic::VariableOne::open(storage)?)
             }
             u64_generic::VariableVariable::MAGIC => {
-                RawColumnInner::U64(u64_generic::VariableVariable::open(storage)?)
+                RawColumnInner::U64VV(u64_generic::VariableVariable::open(storage)?)
             }
             _ => return Err(StorageError::BadMagic(magic)),
         };
@@ -192,8 +192,8 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
 
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
-    U64(u64_generic::VariableVariable),
-    U64Dense(u64_generic::VariableOne),
+    U64VV(u64_generic::VariableVariable),
+    U64V1(u64_generic::VariableOne),
     U64_32(u64_generic::U32Variable),
     U64_32_1(u64_generic::U32One),
     U64_16(u64_generic::U16Variable),

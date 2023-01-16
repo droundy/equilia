@@ -99,6 +99,7 @@ impl RawColumn {
     pub fn read_bools(&self) -> Result<Vec<bool>, StorageError> {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
+            RawColumnInner::BytesVVV(_) => panic!("does not hold bools"),
             RawColumnInner::U64VV(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8_1(_) => panic!("does not hold bools"),
@@ -125,6 +126,7 @@ impl RawColumn {
             RawColumnInner::U64_8_1(b) => column_to_vec(b),
             RawColumnInner::U64V1(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
+            RawColumnInner::BytesVVV(_) => panic!("does not hold u64"),
         }
     }
 
@@ -143,6 +145,9 @@ impl RawColumn {
         storage.seek(0)?;
         let inner = match magic {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
+
+            bytes::VVV::MAGIC => RawColumnInner::BytesVVV(bytes::VVV::open(storage)?),
+
             u64_generic::U32Variable::MAGIC => {
                 RawColumnInner::U64_32(u64_generic::U32Variable::open(storage)?)
             }
@@ -194,6 +199,9 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
 
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
+
+    BytesVVV(bytes::VVV),
+
     U64VV(u64_generic::VariableVariable),
     U64V1(u64_generic::VariableOne),
     U64_32(u64_generic::U32Variable),

@@ -8,6 +8,7 @@ use storage::Storage;
 use self::encoding::WriteEncoded;
 
 mod boolcolumn;
+pub mod bytes;
 pub mod encoding;
 pub mod storage;
 pub mod u64_generic;
@@ -87,6 +88,7 @@ impl From<&[u64]> for RawColumn {
 
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"00u64gen");
+const BYTES_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"000bytes");
 
 impl RawColumn {
     /// This isn't what we'll really want to use, but might be useful for

@@ -151,7 +151,7 @@ impl<const F: u64> Iterator for U64<F> {
 }
 
 impl<const F: u64> U64<F> {
-    pub(crate) const MAGIC: u64 = F ^ U64_GENERIC_MAGIC;
+    pub(crate) const MAGIC: u64 = F + U64_GENERIC_MAGIC;
     fn transposed_next(&mut self) -> Result<Option<Chunk<u64>>, StorageError> {
         if self.current_row == self.n_rows {
             return Ok(None);
@@ -192,7 +192,7 @@ impl<const F: u64> IsRawColumn for U64<F> {
         if input.is_empty() {
             return Ok(());
         }
-        out.write_u64(U64_GENERIC_MAGIC ^ F)?;
+        out.write_u64(Self::MAGIC)?;
         out.write_u64(input.iter().map(|x| x.1).sum())?;
         out.write_u64(input.len() as u64)?;
         let min = input.iter().map(|(v, _)| *v).min().unwrap_or(0);
@@ -210,10 +210,8 @@ impl<const F: u64> IsRawColumn for U64<F> {
     }
 
     fn open(mut storage: Storage) -> Result<Self, StorageError> {
-        println!("offset starts at {}", storage.tell().unwrap());
         let magic = storage.read_u64()?;
-        println!("after magic {}", storage.tell().unwrap());
-        if magic != U64_GENERIC_MAGIC ^ F {
+        if magic != Self::MAGIC {
             return Err(StorageError::BadMagic(magic));
         }
         let n_rows = storage.read_u64()?;

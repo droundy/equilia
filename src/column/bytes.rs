@@ -191,11 +191,11 @@ impl<const F: u64> IsRawColumn for Bytes<F> {
         let n_chunks = storage.read_u64()?;
         let l_min = storage.read_u64()?;
 
-        let len_min = storage.read_bitwidth(format.length)?;
+        let len_min = storage.read_bitwidth(format.length)? + l_min;
         let mut v_min = vec![0; len_min as usize];
         storage.read_exact(v_min.as_mut_slice())?;
 
-        let len_max = storage.read_bitwidth(format.length)?;
+        let len_max = storage.read_bitwidth(format.length)? + l_min;
         let mut v_max = vec![0; len_max as usize];
         storage.read_exact(v_max.as_mut_slice())?;
         Ok(Bytes {

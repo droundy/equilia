@@ -86,6 +86,18 @@ impl From<&[u64]> for RawColumn {
     }
 }
 
+impl From<&[Vec<u8>]> for RawColumn {
+    fn from(vals: &[Vec<u8>]) -> Self {
+        // let longest_run = run_length_encode(vals)
+        //     .into_iter()
+        //     .map(|x| x.1)
+        //     .max()
+        //     .unwrap_or_default();
+        let inner = RawColumnInner::BytesVVV(bytes::VVV::from(vals));
+        RawColumn { inner }
+    }
+}
+
 const BOOL_MAGIC: u64 = u64::from_be_bytes(*b"__bool__");
 const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"00u64gen");
 const BYTES_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"000bytes");

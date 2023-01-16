@@ -11,11 +11,13 @@ repository = "https://github.com/droundy/equilia"
 readme = "README.md"
 
 [dependencies]
+thiserror = "1.0.38"
 
 rand = "0.8.5"
 
 [dev-dependencies]
 expect-test = "1.4.0"
+tempfile = "3.3.0"
 
 [[bin]]
 name = "client"

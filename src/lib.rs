@@ -1,11 +1,13 @@
 #![deny(missing_docs)]
 //! A nice columnar data store.
 
+pub mod column;
 mod lens;
 mod parser;
 mod schema;
 mod value;
 
+pub use column::RawColumn;
 pub use lens::{Lens, LensError};
 pub use schema::{
     db_schema_schema, table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema,

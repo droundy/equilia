@@ -88,15 +88,19 @@ impl From<&[u64]> for RawColumn {
 
 impl From<&[Vec<u8>]> for RawColumn {
     fn from(vals: &[Vec<u8>]) -> Self {
-        // let longest_run = run_length_encode(vals)
-        //     .into_iter()
-        //     .map(|x| x.1)
-        //     .max()
-        //     .unwrap_or_default();
+        let longest_run = run_length_encode(vals)
+            .into_iter()
+            .map(|x| x.1)
+            .max()
+            .unwrap_or_default();
         let mx = vals.iter().map(|v| v.len()).max();
         let mn = vals.iter().map(|v| v.len()).min();
         let inner = if mx == mn {
-            RawColumnInner::BytesFVV(bytes::FVV::from(vals))
+            if longest_run == 1 {
+                RawColumnInner::BytesF1V(bytes::F1V::from(vals))
+            } else {
+                RawColumnInner::BytesFVV(bytes::FVV::from(vals))
+            }
         } else {
             RawColumnInner::BytesVVV(bytes::VVV::from(vals))
         };
@@ -119,6 +123,7 @@ impl RawColumn {
             RawColumnInner::Bool(b) => column_to_vec(b),
             RawColumnInner::BytesVVV(_) => panic!("does not hold bools"),
             RawColumnInner::BytesFVV(_) => panic!("does not hold bools"),
+            RawColumnInner::BytesF1V(_) => panic!("does not hold bools"),
             RawColumnInner::U64VV(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8(_) => panic!("does not hold bools"),
             RawColumnInner::U64_8_1(_) => panic!("does not hold bools"),
@@ -147,6 +152,7 @@ impl RawColumn {
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
             RawColumnInner::BytesVVV(_) => panic!("does not hold u64"),
             RawColumnInner::BytesFVV(_) => panic!("does not hold u64"),
+            RawColumnInner::BytesF1V(_) => panic!("does not hold u64"),
         }
     }
     /// This isn't what we'll really want to use, but might be useful for
@@ -167,6 +173,7 @@ impl RawColumn {
             RawColumnInner::Bool(_) => panic!("does not hold bytes"),
             RawColumnInner::BytesVVV(c) => column_to_vec(c),
             RawColumnInner::BytesFVV(c) => column_to_vec(c),
+            RawColumnInner::BytesF1V(c) => column_to_vec(c),
         }
     }
 
@@ -188,6 +195,7 @@ impl RawColumn {
 
             bytes::VVV::MAGIC => RawColumnInner::BytesVVV(bytes::VVV::open(storage)?),
             bytes::FVV::MAGIC => RawColumnInner::BytesFVV(bytes::FVV::open(storage)?),
+            bytes::F1V::MAGIC => RawColumnInner::BytesF1V(bytes::F1V::open(storage)?),
 
             u64_generic::U32Variable::MAGIC => {
                 RawColumnInner::U64_32(u64_generic::U32Variable::open(storage)?)
@@ -243,6 +251,7 @@ pub(crate) enum RawColumnInner {
 
     BytesVVV(bytes::VVV),
     BytesFVV(bytes::FVV),
+    BytesF1V(bytes::F1V),
 
     U64VV(u64_generic::VariableVariable),
     U64V1(u64_generic::VariableOne),

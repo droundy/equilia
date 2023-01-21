@@ -164,7 +164,7 @@ impl<const F: u64> IsRawColumn for Bytes<F> {
         if max_l - min_l > format.length.max() {
             return Err(StorageError::OutOfBounds);
         }
-        out.write_u64(max_l)?;
+        out.write_u64(min_l)?;
         out.write_bitwidth(format.length, min.len() as u64 - min_l)?;
         out.write_all(&min)?;
         out.write_bitwidth(format.length, max.len() as u64 - min_l)?;
@@ -240,4 +240,43 @@ impl<const F: u64> TryFrom<Storage> for Bytes<F> {
     fn try_from(storage: Storage) -> Result<Self, Self::Error> {
         Self::open(storage)
     }
+}
+
+#[test]
+fn test_encode_vvv() {
+    use super::RawColumn;
+
+    let data = [
+        b"hello".to_vec(),
+        b"hello".to_vec(),
+        b"hello".to_vec(),
+        b"goodbye".to_vec(),
+    ];
+    let c = VVV::from(data.as_slice());
+    let rc = RawColumn::from(data.as_slice());
+    assert_eq!(rc.read_bytes().unwrap().as_slice(), &data);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(Vec<u8>, u64)> = c
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <VVV as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let c2 = VVV::open(storage.clone()).unwrap();
+    assert_eq!(
+        c2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        c.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let rc2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(rc2.read_bytes().unwrap().as_slice(), &data);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <VVV as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let rc = RawColumn::try_from(f).unwrap();
+    assert_eq!(rc.read_bytes().unwrap().as_slice(), &data);
 }

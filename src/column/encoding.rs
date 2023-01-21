@@ -13,6 +13,8 @@ const U64_CODE: u8 = 255;
 pub enum BitWidth {
     /// Zero bits, value must be 1
     IsOne = 0,
+    /// Zero bits, value must be 0
+    IsZero = 10,
     /// 1 byte
     U8 = 1,
     /// 2 bytes
@@ -29,6 +31,7 @@ impl BitWidth {
     pub const fn new(v: u8) -> Option<BitWidth> {
         use BitWidth::*;
         match () {
+            _ if v == IsZero as u8 => Some(IsZero),
             _ if v == IsOne as u8 => Some(IsOne),
             _ if v == U8 as u8 => Some(U8),
             _ if v == U16 as u8 => Some(U16),
@@ -42,6 +45,7 @@ impl BitWidth {
     /// The maximum representable value
     pub const fn max(self) -> u64 {
         match self {
+            BitWidth::IsZero => 0,
             BitWidth::IsOne => 1,
             BitWidth::U8 => u8::MAX as u64,
             BitWidth::U16 => u16::MAX as u64,
@@ -62,8 +66,8 @@ pub enum StorageError {
     #[error("Bad magic: {}", pretty_magic(.0))]
     BadMagic(u64),
     /// Out of bounds
-    #[error("Out of bounds")]
-    OutOfBounds,
+    #[error("Out of bounds: {0}")]
+    OutOfBounds(&'static str),
 }
 
 fn pretty_magic(m: &u64) -> String {
@@ -125,6 +129,7 @@ pub trait ReadEncoded {
     #[inline(always)]
     fn read_bitwidth(&mut self, bitwidth: BitWidth) -> Result<u64, StorageError> {
         match bitwidth {
+            BitWidth::IsZero => Ok(0),
             BitWidth::IsOne => Ok(1),
             BitWidth::U8 => self.read_u8().map(|v| v as u64),
             BitWidth::U16 => self.read_u16().map(|v| v as u64),
@@ -185,7 +190,14 @@ pub trait WriteEncoded: std::io::Write {
         match bitwidth {
             BitWidth::IsOne => {
                 if v != 1 {
-                    Err(StorageError::OutOfBounds)
+                    Err(StorageError::OutOfBounds("oops"))
+                } else {
+                    Ok(())
+                }
+            }
+            BitWidth::IsZero => {
+                if v != 0 {
+                    Err(StorageError::OutOfBounds("oops"))
                 } else {
                     Ok(())
                 }
@@ -194,21 +206,21 @@ pub trait WriteEncoded: std::io::Write {
                 if let Ok(v) = v.try_into() {
                     self.write_u8(v)
                 } else {
-                    Err(StorageError::OutOfBounds)
+                    Err(StorageError::OutOfBounds("oops"))
                 }
             }
             BitWidth::U16 => {
                 if let Ok(v) = v.try_into() {
                     self.write_u16(v)
                 } else {
-                    Err(StorageError::OutOfBounds)
+                    Err(StorageError::OutOfBounds("oops"))
                 }
             }
             BitWidth::U32 => {
                 if let Ok(v) = v.try_into() {
                     self.write_u32(v)
                 } else {
-                    Err(StorageError::OutOfBounds)
+                    Err(StorageError::OutOfBounds("oops"))
                 }
             }
             BitWidth::U64 => self.write_u64(v),

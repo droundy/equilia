@@ -12,8 +12,6 @@ pub enum RawKind {
     Bool,
     /// A sequence of bytes
     Bytes,
-    /// A sequence of bytes with fixed length
-    FixedBytes(usize),
 }
 
 /// A value that could exist in a column
@@ -25,8 +23,6 @@ pub enum RawValue {
     Bool(bool),
     /// A bytes value
     Bytes(Vec<u8>),
-    /// A bytes value with fixed length
-    FixedBytes(Vec<u8>),
 }
 
 impl RawValue {
@@ -36,7 +32,6 @@ impl RawValue {
             RawValue::Bool(_) => RawKind::Bool,
             RawValue::U64(_) => RawKind::U64,
             RawValue::Bytes(_) => RawKind::Bytes,
-            RawValue::FixedBytes(b) => RawKind::FixedBytes(b.len()),
         }
     }
 
@@ -53,11 +48,6 @@ impl RawValue {
             }
             RawValue::Bytes(bytes) => {
                 v.push(2);
-                v.push(bytes.len().try_into().unwrap());
-                v.extend(bytes);
-            }
-            RawValue::FixedBytes(bytes) => {
-                v.push(3);
                 v.push(bytes.len().try_into().unwrap());
                 v.extend(bytes);
             }
@@ -85,11 +75,6 @@ impl RawValue {
                 let bytes = data[2..2 + len].to_vec();
                 Ok((Self::Bytes(bytes), &data[2 + len..]))
             }
-            3 => {
-                let len = data[1] as usize;
-                let bytes = data[2..2 + len].to_vec();
-                Ok((Self::FixedBytes(bytes), &data[2 + len..]))
-            }
             _ => unreachable!(),
         }
     }
@@ -100,7 +85,7 @@ impl std::fmt::Display for RawValue {
         match self {
             RawValue::Bool(b) => write!(f, "{b:?}"),
             RawValue::U64(n) => write!(f, "{n}"),
-            RawValue::FixedBytes(x) | RawValue::Bytes(x) => {
+            RawValue::Bytes(x) => {
                 if let Ok(s) = std::str::from_utf8(x) {
                     write!(f, "'{s}'")
                 } else {
@@ -184,33 +169,6 @@ mod test {
             let output = RawValue::decode(&data).unwrap();
             let expected = (
                 RawValue::Bytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]),
-                &data[12..],
-            );
-            assert_eq!(expected, output);
-        }
-    }
-
-    #[test]
-    fn encode_fixedbytes() {
-        let value = RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
-        let output = value.encode();
-        let expected = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-        assert_eq!(expected, output);
-    }
-
-    #[test]
-    fn decode_fixedbytes() {
-        {
-            let data = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
-            let output = RawValue::decode(&data).unwrap();
-            let expected = RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]);
-            assert_eq!(expected, output.0);
-        }
-        {
-            let data = vec![3, 10, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 9, 9, 9];
-            let output = RawValue::decode(&data).unwrap();
-            let expected = (
-                RawValue::FixedBytes(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 0]),
                 &data[12..],
             );
             assert_eq!(expected, output);

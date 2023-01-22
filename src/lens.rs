@@ -40,14 +40,14 @@ macro_rules! define_lens_id {
         }
         impl From<$tname> for RawValues {
             fn from(id: $tname) -> Self {
-                RawValues(vec![RawValue::FixedBytes(id.0.to_vec())])
+                RawValues(vec![RawValue::Bytes(id.0.to_vec())])
             }
         }
         impl TryFrom<RawValues> for $tname {
             type Error = LensError;
             fn try_from(v: RawValues) -> Result<Self, LensError> {
                 match &v.0.as_slice() {
-                    &[RawValue::FixedBytes(b)] => {
+                    &[RawValue::Bytes(b)] => {
                         if let Ok(b) = b.as_slice().try_into() {
                             Ok(Self(b))
                         } else {

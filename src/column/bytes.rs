@@ -61,6 +61,17 @@ pub(crate) type VVV = Bytes<
     },
 >;
 
+pub(crate) type V10 = Bytes<
+    {
+        Format {
+            length: BitWidth::Variable,
+            runlength: BitWidth::IsOne,
+            prefix: BitWidth::IsZero,
+        }
+        .to_bytes()
+    },
+>;
+
 pub(crate) type FVV = Bytes<
     {
         Format {
@@ -195,7 +206,11 @@ impl<const F: u64> IsRawColumn for Bytes<F> {
         for v in input.iter() {
             out.write_bitwidth(format.runlength, v.1)?;
             out.write_bitwidth(format.length, v.0.len() as u64 - min_l)?;
-            let prefix = std::cmp::min(prefix(&prev.0, &v.0) as u64, format.prefix.max());
+            let prefix = if format.prefix.max() == 0 {
+                0
+            } else {
+                std::cmp::min(prefix(&prev.0, &v.0) as u64, format.prefix.max())
+            };
             out.write_bitwidth(format.prefix, prefix)?;
             out.write_all(&v.0[prefix as usize..])?;
             prev = v;
@@ -338,6 +353,44 @@ fn test_encode_fvv() {
 
     let mut f = tempfile::tempfile().unwrap();
     <FVV as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
+    let rc = RawColumn::try_from(f).unwrap();
+    assert_eq!(rc.read_bytes().unwrap().as_slice(), &data);
+}
+
+#[test]
+fn test_encode_v10() {
+    use super::RawColumn;
+
+    let data = [
+        b"hello world".to_vec(),
+        b"hello".to_vec(),
+        b"goodbye".to_vec(),
+    ];
+    let c = V10::from(data.as_slice());
+    let rc = RawColumn::from(data.as_slice());
+    assert_eq!(rc.read_bytes().unwrap().as_slice(), &data);
+
+    let mut encoded: Vec<u8> = Vec::new();
+    let chunks: Vec<(Vec<u8>, u64)> = c
+        .clone()
+        .map(|chunk| {
+            let chunk = chunk.unwrap();
+            (chunk.value, chunk.range.end - chunk.range.start)
+        })
+        .collect();
+    <V10 as IsRawColumn>::encode(&mut encoded, chunks.as_slice()).unwrap();
+
+    let storage = Storage::from(encoded.clone());
+    let c2 = V10::open(storage.clone()).unwrap();
+    assert_eq!(
+        c2.map(|x| x.unwrap()).collect::<Vec<_>>(),
+        c.map(|x| x.unwrap()).collect::<Vec<_>>()
+    );
+    let rc2 = RawColumn::decode(encoded).unwrap();
+    assert_eq!(rc2.read_bytes().unwrap().as_slice(), &data);
+
+    let mut f = tempfile::tempfile().unwrap();
+    <V10 as IsRawColumn>::encode(&mut f, chunks.as_slice()).unwrap();
     let rc = RawColumn::try_from(f).unwrap();
     assert_eq!(rc.read_bytes().unwrap().as_slice(), &data);
 }

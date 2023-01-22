@@ -102,7 +102,11 @@ impl From<&[Vec<u8>]> for RawColumn {
                 RawColumnInner::BytesFVV(bytes::FVV::from(vals))
             }
         } else {
-            RawColumnInner::BytesVVV(bytes::VVV::from(vals))
+            if longest_run == 1 {
+                RawColumnInner::BytesV10(bytes::V10::from(vals))
+            } else {
+                RawColumnInner::BytesVVV(bytes::VVV::from(vals))
+            }
         };
         RawColumn { inner }
     }
@@ -122,6 +126,7 @@ impl RawColumn {
         match &self.inner {
             RawColumnInner::Bool(b) => column_to_vec(b),
             RawColumnInner::BytesVVV(_) => panic!("does not hold bools"),
+            RawColumnInner::BytesV10(_) => panic!("does not hold bools"),
             RawColumnInner::BytesFVV(_) => panic!("does not hold bools"),
             RawColumnInner::BytesF1V(_) => panic!("does not hold bools"),
             RawColumnInner::U64VV(_) => panic!("does not hold bools"),
@@ -151,6 +156,7 @@ impl RawColumn {
             RawColumnInner::U64V1(b) => column_to_vec(b),
             RawColumnInner::Bool(_) => panic!("does not hold u64"),
             RawColumnInner::BytesVVV(_) => panic!("does not hold u64"),
+            RawColumnInner::BytesV10(_) => panic!("does not hold u64"),
             RawColumnInner::BytesFVV(_) => panic!("does not hold u64"),
             RawColumnInner::BytesF1V(_) => panic!("does not hold u64"),
         }
@@ -172,6 +178,7 @@ impl RawColumn {
             RawColumnInner::U64V1(_) => panic!("does not hold bytes"),
             RawColumnInner::Bool(_) => panic!("does not hold bytes"),
             RawColumnInner::BytesVVV(c) => column_to_vec(c),
+            RawColumnInner::BytesV10(c) => column_to_vec(c),
             RawColumnInner::BytesFVV(c) => column_to_vec(c),
             RawColumnInner::BytesF1V(c) => column_to_vec(c),
         }
@@ -194,6 +201,7 @@ impl RawColumn {
             BOOL_MAGIC => RawColumnInner::Bool(BoolColumn::open(storage)?),
 
             bytes::VVV::MAGIC => RawColumnInner::BytesVVV(bytes::VVV::open(storage)?),
+            bytes::V10::MAGIC => RawColumnInner::BytesV10(bytes::V10::open(storage)?),
             bytes::FVV::MAGIC => RawColumnInner::BytesFVV(bytes::FVV::open(storage)?),
             bytes::F1V::MAGIC => RawColumnInner::BytesF1V(bytes::F1V::open(storage)?),
 
@@ -250,6 +258,7 @@ pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
 
     BytesVVV(bytes::VVV),
+    BytesV10(bytes::V10),
     BytesFVV(bytes::FVV),
     BytesF1V(bytes::F1V),
 

@@ -5,6 +5,7 @@ pub mod column;
 mod lens;
 mod parser;
 mod schema;
+mod table;
 mod value;
 
 pub use column::RawColumn;
@@ -12,6 +13,7 @@ pub use lens::{Lens, LensError};
 pub use schema::{
     db_schema_schema, table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema,
 };
+pub use table::{Table, TableBuilder};
 use value::RawValue;
 
 /// A "raw" row, as it will be sorted and stored.

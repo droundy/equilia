@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
-use crate::value::RawValue;
-use crate::LensError;
+use crate::value::{RawKind, RawValue};
+use crate::{LensError, TableBuilder};
 
 /// A kind of column to aggregate
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -67,6 +69,13 @@ impl RawColumnSchema {
         } else {
             format!("{}.{}", self.name, self.fieldname,)
         }
+    }
+    pub(crate) fn file_name(&self) -> PathBuf {
+        self.id.as_filename()
+    }
+
+    pub(crate) fn kind(&self) -> RawKind {
+        self.default.kind()
     }
 }
 impl std::fmt::Display for RawColumnSchema {
@@ -169,10 +178,20 @@ impl TableSchema {
     }
 
     /// All the columns
-    fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
+    pub(crate) fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
         self.primary
             .iter()
             .chain(self.aggregations.iter().flat_map(|a| a.columns()))
+    }
+
+    /// The number of columns
+    pub fn num_columns(&self) -> usize {
+        self.primary.len() + self.aggregations.len()
+    }
+
+    /// Create an empty builder for a table.
+    pub fn build(self) -> TableBuilder {
+        TableBuilder::new(Arc::new(self))
     }
 }
 

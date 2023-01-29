@@ -48,6 +48,83 @@ impl From<&[bool]> for RawColumn {
     }
 }
 
+impl RawColumn {
+    pub(crate) fn write_bools<W: WriteEncoded>(
+        f: &mut W,
+        bools: &[bool],
+    ) -> Result<(), StorageError> {
+        BoolColumn::encode(f, run_length_encode(bools).as_slice())
+    }
+
+    pub(crate) fn write_u64<W: WriteEncoded>(
+        out: &mut W,
+        vals: &[u64],
+    ) -> Result<(), StorageError> {
+        let input = run_length_encode(vals);
+        let input = input.as_slice();
+        let max = vals.iter().copied().max().unwrap_or_default();
+        let min = vals.iter().copied().min().unwrap_or_default();
+        let longest_run = run_length_encode(vals)
+            .into_iter()
+            .map(|x| x.1)
+            .max()
+            .unwrap_or_default();
+        if max - min > u32::MAX as u64 {
+            if longest_run < 2 {
+                u64_generic::VariableOne::encode(out, input)
+            } else {
+                u64_generic::VariableVariable::encode(out, input)
+            }
+        } else if max - min > u16::MAX as u64 {
+            if longest_run < 2 {
+                u64_generic::U32One::encode(out, input)
+            } else {
+                u64_generic::U32Variable::encode(out, input)
+            }
+        } else if max - min > u8::MAX as u64 {
+            if longest_run < 2 {
+                u64_generic::U16One::encode(out, input)
+            } else {
+                u64_generic::U16Variable::encode(out, input)
+            }
+        } else {
+            if longest_run < 2 {
+                u64_generic::U8One::encode(out, input)
+            } else {
+                u64_generic::U8Variable::encode(out, input)
+            }
+        }
+    }
+
+    pub(crate) fn write_bytes<W: WriteEncoded>(
+        out: &mut W,
+        vals: &[Vec<u8>],
+    ) -> Result<(), StorageError> {
+        let input = run_length_encode(vals);
+        let input = input.as_slice();
+        let longest_run = run_length_encode(vals)
+            .into_iter()
+            .map(|x| x.1)
+            .max()
+            .unwrap_or_default();
+        let mx = vals.iter().map(|v| v.len()).max();
+        let mn = vals.iter().map(|v| v.len()).min();
+        if mx == mn {
+            if longest_run == 1 {
+                bytes::F1V::encode(out, input)
+            } else {
+                bytes::FVV::encode(out, input)
+            }
+        } else {
+            if longest_run == 1 {
+                bytes::V10::encode(out, input)
+            } else {
+                bytes::VVV::encode(out, input)
+            }
+        }
+    }
+}
+
 impl From<&[u64]> for RawColumn {
     fn from(vals: &[u64]) -> Self {
         let max = vals.iter().copied().max().unwrap_or_default();

@@ -14,6 +14,16 @@ pub enum RawKind {
     Bytes,
 }
 
+impl std::fmt::Display for RawKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RawKind::Bool => f.write_str("bool"),
+            RawKind::Bytes => f.write_str("bytes"),
+            RawKind::U64 => f.write_str("u64"),
+        }
+    }
+}
+
 /// A value that could exist in a column
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RawValue {
@@ -32,6 +42,30 @@ impl RawValue {
             RawValue::Bool(_) => RawKind::Bool,
             RawValue::U64(_) => RawKind::U64,
             RawValue::Bytes(_) => RawKind::Bytes,
+        }
+    }
+
+    pub(crate) fn assert_bool(&self) -> bool {
+        if let RawValue::Bool(b) = self {
+            *b
+        } else {
+            panic!("Found {} rather than bool", self.kind());
+        }
+    }
+
+    pub(crate) fn assert_u64(&self) -> u64 {
+        if let RawValue::U64(v) = self {
+            *v
+        } else {
+            panic!("Found {} rather than u64", self.kind());
+        }
+    }
+
+    pub(crate) fn assert_bytes(&self) -> Vec<u8> {
+        if let RawValue::Bytes(v) = self {
+            v.clone()
+        } else {
+            panic!("Found {} rather than bytes", self.kind());
         }
     }
 

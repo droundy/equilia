@@ -79,6 +79,18 @@ macro_rules! define_lens_id {
                 }
             }
         }
+
+        impl $tname {
+            /// Show this id as a filename
+            pub fn as_filename(&self) -> std::path::PathBuf {
+                let mut s = String::with_capacity(32);
+                use std::fmt::Write;
+                for c in self.0.iter() {
+                    write!(&mut s, "{:x}", c).unwrap();
+                }
+                s.into()
+            }
+        }
         impl std::fmt::Debug for $tname {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 if let Ok(s) = std::str::from_utf8(&self.0) {

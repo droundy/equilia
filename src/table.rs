@@ -26,18 +26,22 @@ pub struct Table {
     columns: Vec<RawColumn>,
 }
 
-// impl Table {
-//     /// Save to disk
-//     pub fn save(self, directory: impl AsRef<Path>) -> Result<(), StorageError> {
-//         let directory: &Path = directory.as_ref();
-//         std::fs::create_dir_all(directory)?;
-//         for (schema, column) in self.schema.columns().map(|(_, c)| c).zip(self.columns) {
-//             let filename = directory.join(schema.file_name());
-//             std::fs::write(filename, contents);
-//         }
-//         Ok(())
-//     }
-// }
+impl Table {
+    /// Read from disk
+    pub fn read(
+        self,
+        directory: impl AsRef<Path>,
+        schema: Arc<TableSchema>,
+    ) -> Result<Self, StorageError> {
+        let directory: &Path = directory.as_ref();
+        let mut columns = Vec::new();
+        for schema in self.schema.columns().map(|(_, c)| c) {
+            let path = directory.join(schema.file_name());
+            columns.push(RawColumn::open(path)?);
+        }
+        Ok(Table { schema, columns })
+    }
+}
 
 /// A not-yet-sorted table
 pub struct TableBuilder {

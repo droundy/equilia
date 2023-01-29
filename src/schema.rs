@@ -324,8 +324,8 @@ pub fn db_schema_schema() -> TableSchema {
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
         CREATE TABLE columns ID __table_schemas {
-            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
-            column FixedBytes(16) DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
+            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            column Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order U64 DEFAULT 0 LENS u64,
             aggregate U64 DEFAULT 0 LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
@@ -339,7 +339,7 @@ fn format_db_tables() {
 
     let expected = expect_test::expect![[r#"
         CREATE TABLE tables ID __db_schema {
-            table FixedBytes(16) DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             created.seconds U64 DEFAULT 0 LENS time::SystemTime,
             created.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,

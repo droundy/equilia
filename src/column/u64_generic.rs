@@ -31,10 +31,10 @@ impl Format {
     const fn from_bytes(value: u64) -> Result<Self, StorageError> {
         let bytes = value.to_be_bytes();
         let Some(value) = BitWidth::new(bytes[0]) else {
-            return Err(StorageError::OutOfBounds);
+            return Err(StorageError::OutOfBounds("oops"));
         };
         let Some(runlength) = BitWidth::new(bytes[1]) else {
-            return Err(StorageError::OutOfBounds);
+            return Err(StorageError::OutOfBounds("oops"));
         };
         Ok(Format { value, runlength })
     }
@@ -198,7 +198,7 @@ impl<const F: u64> IsRawColumn for U64<F> {
         let min = input.iter().map(|(v, _)| *v).min().unwrap_or(0);
         let max = input.iter().map(|(v, _)| *v).max().unwrap_or(0);
         if max - min > format.value.max() {
-            return Err(StorageError::OutOfBounds);
+            return Err(StorageError::OutOfBounds("oops"));
         }
         out.write_u64(min)?;
         out.write_u64(max)?;

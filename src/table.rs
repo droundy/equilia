@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use crate::column::encoding::StorageError;
 use crate::column::RawColumn;
+use crate::lens::TableId;
 use crate::schema::TableSchema;
 use crate::value::{RawKind, RawValue};
 use thiserror::Error;
@@ -29,18 +30,23 @@ pub struct Table {
 impl Table {
     /// Read from disk
     pub fn read(
-        self,
         directory: impl AsRef<Path>,
         schema: Arc<TableSchema>,
     ) -> Result<Self, StorageError> {
         let directory: &Path = directory.as_ref();
         let mut columns = Vec::new();
-        for schema in self.schema.columns().map(|(_, c)| c) {
+        for schema in schema.columns().map(|(_, c)| c) {
             let path = directory.join(schema.file_name());
             columns.push(RawColumn::open(path)?);
         }
         Ok(Table { schema, columns })
     }
+}
+
+/// A type that could represent a row of a table
+pub trait IsRow {
+    const TABLE_ID: TableId;
+    fn to_raw(self) -> Vec<RawValue>;
 }
 
 /// A not-yet-sorted table
@@ -59,7 +65,7 @@ impl TableBuilder {
     }
 
     /// Add a row
-    pub fn insert_row(&mut self, mut row: Vec<RawValue>) -> Result<(), InvalidColumn> {
+    pub fn insert_raw_row(&mut self, mut row: Vec<RawValue>) -> Result<(), InvalidColumn> {
         if row.len() != self.schema.num_columns() {
             return Err(InvalidColumn::WrongNumber {
                 found: row.len(),
@@ -78,6 +84,12 @@ impl TableBuilder {
         }
         self.rows.push(row);
         Ok(())
+    }
+
+    /// Insert a row that is specific to this table schema.
+    pub fn insert_row<R: IsRow>(&mut self, row: R) -> Result<(), InvalidColumn> {
+        assert_eq!(R::TABLE_ID, self.schema.id);
+        self.insert_raw_row(row.to_raw())
     }
 
     /// Create the table

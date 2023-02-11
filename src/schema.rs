@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::column::encoding::StorageError;
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
+use crate::table::IsRow;
 use crate::value::{RawKind, RawValue};
-use crate::{LensError, TableBuilder};
+use crate::{LensError, Table, TableBuilder};
 
 /// A kind of column to aggregate
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -125,7 +127,7 @@ type OrderedRawColumns = BTreeSet<(u64, RawColumnSchema)>;
 /// The schema of a table
 pub struct TableSchema {
     name: &'static str,
-    id: TableId,
+    pub(crate) id: TableId,
     primary: OrderedRawColumns, // must all have AggregationNone
     aggregations: BTreeSet<AggregatingSchema>,
 }
@@ -187,6 +189,32 @@ impl TableSchema {
     /// The number of columns
     pub fn num_columns(&self) -> usize {
         self.primary.len() + self.aggregations.len()
+    }
+
+    fn to_table_rows(&self) -> Vec<TableSchemaRow> {
+        let table = self.id;
+        let mut out = Vec::new();
+        for (order, c) in self.primary.iter() {
+            out.push(TableSchemaRow {
+                table,
+                column: c.id,
+                order: *order,
+                aggregate: Aggregation::None,
+                modified: std::time::SystemTime::now(),
+                column_name: c.name.to_string(),
+            })
+        }
+        out
+    }
+
+    fn to_db_row(&self) -> DbSchemaRow {
+        DbSchemaRow {
+            table: self.id,
+            created: std::time::SystemTime::now(),
+            modified: std::time::SystemTime::now(),
+            table_name: self.name.to_string(),
+            is_deleted: false,
+        }
     }
 
     /// Create an empty builder for a table.
@@ -270,10 +298,34 @@ impl<T: Lens + Clone> ColumnSchema<T> {
     }
 }
 
+pub(crate) struct TableSchemaRow {
+    table: TableId,
+    column: ColumnId,
+    order: u64,
+    aggregate: Aggregation,
+    modified: std::time::SystemTime,
+    column_name: String,
+}
+
+impl IsRow for TableSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__table_schemas_");
+    fn to_raw(self) -> Vec<RawValue> {
+        let mut out = Vec::with_capacity(7);
+        out.extend(RawValues::from(self.table).0);
+        out.extend(RawValues::from(self.column).0);
+        out.extend(RawValues::from(self.order).0);
+        out.extend(RawValues::from(self.aggregate).0);
+        out.extend(RawValues::from(self.modified).0);
+        out.extend(RawValues::from(self.column_name).0);
+        assert_eq!(out.len(), 7);
+        out
+    }
+}
+
 /// This is he schema for the table that holds schemas of tables
 pub fn table_schema_schema() -> TableSchema {
     let mut table = TableSchema::new("columns");
-    table.id = TableId::const_new(b"__table_schemas_");
+    table.id = TableSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
             .with_id(ColumnId::const_new(b"table_id--tables"))
@@ -307,10 +359,56 @@ pub fn table_schema_schema() -> TableSchema {
     table
 }
 
+pub(crate) struct DbSchemaRow {
+    table: TableId,
+    created: std::time::SystemTime,
+    modified: std::time::SystemTime,
+    table_name: String,
+    is_deleted: bool,
+}
+
+impl IsRow for DbSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__db_schema_____");
+    fn to_raw(self) -> Vec<RawValue> {
+        let mut out = Vec::with_capacity(7);
+        out.extend(RawValues::from(self.table).0);
+        out.extend(RawValues::from(self.created).0);
+        out.extend(RawValues::from(self.modified).0);
+        out.extend(RawValues::from(self.table_name).0);
+        out.extend(RawValues::from(self.is_deleted).0);
+        assert_eq!(out.len(), 7);
+        out
+    }
+}
+
+pub fn save_db_schema(
+    tables: Vec<TableSchema>,
+    directory: impl AsRef<Path>,
+) -> Result<(), StorageError> {
+    let mut table_table = TableBuilder::new(Arc::new(table_schema_schema()));
+    let mut db_table = TableBuilder::new(Arc::new(db_schema_schema()));
+    for t in tables {
+        for row in t.to_table_rows() {
+            table_table.insert_row(row).unwrap();
+        }
+        db_table.insert_row(t.to_db_row()).unwrap();
+    }
+    table_table.save(directory.as_ref())?;
+    db_table.save(directory)
+}
+pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, StorageError> {
+    let mut out = Vec::new();
+    let db_schema = Arc::new(db_schema_schema());
+    let db_table = Table::read(directory.as_ref(), db_schema)?;
+    Ok(out)
+}
+
 /// This is the schema for the table that holds the schema of the db itself
+///
+/// In other words, this table holds the set of tables.
 pub fn db_schema_schema() -> TableSchema {
     let mut table = TableSchema::new("tables");
-    table.id = TableId::const_new(b"__db_schema_____");
+    table.id = DbSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
             .with_id(ColumnId::const_new(b"table_id--tables"))

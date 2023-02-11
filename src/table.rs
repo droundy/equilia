@@ -6,6 +6,7 @@ use crate::column::RawColumn;
 use crate::lens::TableId;
 use crate::schema::TableSchema;
 use crate::value::{RawKind, RawValue};
+use crate::LensError;
 use thiserror::Error;
 
 /// An invalid column error
@@ -44,9 +45,10 @@ impl Table {
 }
 
 /// A type that could represent a row of a table
-pub trait IsRow {
+pub trait IsRow: Sized {
     const TABLE_ID: TableId;
     fn to_raw(self) -> Vec<RawValue>;
+    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError>;
 }
 
 /// A not-yet-sorted table

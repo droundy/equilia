@@ -320,6 +320,16 @@ impl IsRow for TableSchemaRow {
         assert_eq!(out.len(), 7);
         out
     }
+    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError> {
+        Ok(TableSchemaRow {
+            table: RawValues(vec![values[0]]).try_into()?,
+            column: RawValues(vec![values[1]]).try_into()?,
+            order: RawValues(vec![values[2]]).try_into()?,
+            aggregate: RawValues(vec![values[3]]).try_into()?,
+            modified: RawValues(vec![values[4], values[5]]).try_into()?,
+            column_name: RawValues(vec![values[6]]).try_into()?,
+        })
+    }
 }
 
 /// This is he schema for the table that holds schemas of tables
@@ -378,6 +388,17 @@ impl IsRow for DbSchemaRow {
         out.extend(RawValues::from(self.is_deleted).0);
         assert_eq!(out.len(), 7);
         out
+    }
+    fn from_raw(mut values: Vec<RawValue>) -> Result<Self, LensError> {
+        let is_deleted = RawValues(vec![values.pop().unwrap()]).try_into()?;
+        let table_name = RawValues(vec![values.pop().unwrap()]).try_into()?;
+        Ok(DbSchemaRow {
+            table: RawValues(vec![values[0]]).try_into()?,
+            created: RawValues(vec![values[1], values[2]]).try_into()?,
+            modified: RawValues(vec![values[3], values[4]]).try_into()?,
+            table_name,
+            is_deleted,
+        })
     }
 }
 

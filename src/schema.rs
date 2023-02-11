@@ -321,13 +321,22 @@ impl IsRow for TableSchemaRow {
         out
     }
     fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError> {
+        let mut values = values.into_iter();
+        let table = RawValues(vec![values.next().unwrap()]).try_into()?;
+        let column = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let order = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let aggregate =
+            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let modified =
+            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let column_name = RawValues(vec![values.next().unwrap()]).try_into()?;
         Ok(TableSchemaRow {
-            table: RawValues(vec![values[0]]).try_into()?,
-            column: RawValues(vec![values[1]]).try_into()?,
-            order: RawValues(vec![values[2]]).try_into()?,
-            aggregate: RawValues(vec![values[3]]).try_into()?,
-            modified: RawValues(vec![values[4], values[5]]).try_into()?,
-            column_name: RawValues(vec![values[6]]).try_into()?,
+            table,
+            column,
+            order,
+            aggregate,
+            modified,
+            column_name,
         })
     }
 }
@@ -389,13 +398,18 @@ impl IsRow for DbSchemaRow {
         assert_eq!(out.len(), 7);
         out
     }
-    fn from_raw(mut values: Vec<RawValue>) -> Result<Self, LensError> {
-        let is_deleted = RawValues(vec![values.pop().unwrap()]).try_into()?;
-        let table_name = RawValues(vec![values.pop().unwrap()]).try_into()?;
+    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError> {
+        let mut values = values.into_iter();
+        let table = RawValues(vec![values.next().unwrap()]).try_into()?;
+        let created = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let modified =
+            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        let table_name = RawValues(vec![values.next().unwrap()]).try_into()?;
+        let is_deleted = RawValues(vec![values.next().unwrap()]).try_into()?;
         Ok(DbSchemaRow {
-            table: RawValues(vec![values[0]]).try_into()?,
-            created: RawValues(vec![values[1], values[2]]).try_into()?,
-            modified: RawValues(vec![values[3], values[4]]).try_into()?,
+            table,
+            created,
+            modified,
             table_name,
             is_deleted,
         })

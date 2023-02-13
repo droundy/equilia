@@ -1,6 +1,8 @@
 #![deny(missing_docs)]
 //! A nice columnar data store.
 
+use thiserror::Error;
+
 pub mod column;
 mod lens;
 mod parser;
@@ -8,13 +10,26 @@ mod schema;
 mod table;
 mod value;
 
+use column::encoding::StorageError;
 pub use column::RawColumn;
 pub use lens::{Lens, LensError};
 pub use schema::{
-    db_schema_schema, table_schema_schema, ColumnSchema, RawColumnSchema, TableSchema,
+    db_schema_schema, load_db_schema, save_db_schema, table_schema_schema, ColumnSchema,
+    RawColumnSchema, TableSchema,
 };
 pub use table::{Table, TableBuilder};
 use value::RawValue;
+
+/// An error of any sort
+#[derive(Debug, Error)]
+pub enum Error {
+    /// An IO error
+    #[error("Storage error: {0}")]
+    Storage(#[from] StorageError),
+    /// Lens trouble
+    #[error("Type error: {0}")]
+    Lens(#[from] LensError),
+}
 
 /// A "raw" row, as it will be sorted and stored.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

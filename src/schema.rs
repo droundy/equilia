@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -6,7 +7,7 @@ use crate::column::encoding::StorageError;
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
 use crate::table::IsRow;
 use crate::value::{RawKind, RawValue};
-use crate::{LensError, Table, TableBuilder};
+use crate::{Error, LensError, RawColumn, Table, TableBuilder};
 
 /// A kind of column to aggregate
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -320,24 +321,30 @@ impl IsRow for TableSchemaRow {
         assert_eq!(out.len(), 7);
         out
     }
-    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError> {
-        let mut values = values.into_iter();
-        let table = RawValues(vec![values.next().unwrap()]).try_into()?;
-        let column = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let order = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let aggregate =
-            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let modified =
-            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let column_name = RawValues(vec![values.next().unwrap()]).try_into()?;
-        Ok(TableSchemaRow {
-            table,
-            column,
-            order,
-            aggregate,
-            modified,
-            column_name,
-        })
+    fn from_raw(columns: Vec<RawColumn>) -> Result<Vec<Self>, Error> {
+        let mut columns = columns.into_iter();
+        let table = columns.next().unwrap().read_values()?;
+        let length = table.len();
+        let mut table = table.into_iter();
+        let mut column = columns.next().unwrap().read_values()?.into_iter();
+        let mut order = columns.next().unwrap().read_u64()?.into_iter();
+        let mut aggregate = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_1 = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_2 = columns.next().unwrap().read_values()?.into_iter();
+        let mut column_name = columns.next().unwrap().read_values()?.into_iter();
+        let mut out = Vec::with_capacity(length);
+        for _ in 0..length {
+            out.push(TableSchemaRow {
+                table: RawValues(vec![table.next().unwrap()]).try_into()?,
+                column: RawValues(vec![column.next().unwrap()]).try_into()?,
+                order: order.next().unwrap(),
+                aggregate: RawValues(vec![aggregate.next().unwrap()]).try_into()?,
+                modified: RawValues(vec![modified_1.next().unwrap(), modified_2.next().unwrap()])
+                    .try_into()?,
+                column_name: RawValues(vec![column_name.next().unwrap()]).try_into()?,
+            });
+        }
+        Ok(out)
     }
 }
 
@@ -357,6 +364,31 @@ pub fn table_schema_schema() -> TableSchema {
     );
     table.add_primary(
         ColumnSchema::with_default("order", 0u64)
+            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("type", 0u64)
+            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("lens", 0u64)
+            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("default-if-u64", 0u64)
+            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("default-if-bytes", 0u64)
+            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("default-if-bool", 0u64)
             .with_id(ColumnId::const_new(b"column-sortorder"))
             .raw(),
     );
@@ -398,24 +430,49 @@ impl IsRow for DbSchemaRow {
         assert_eq!(out.len(), 7);
         out
     }
-    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError> {
-        let mut values = values.into_iter();
-        let table = RawValues(vec![values.next().unwrap()]).try_into()?;
-        let created = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let modified =
-            RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        let table_name = RawValues(vec![values.next().unwrap()]).try_into()?;
-        let is_deleted = RawValues(vec![values.next().unwrap()]).try_into()?;
-        Ok(DbSchemaRow {
-            table,
-            created,
-            modified,
-            table_name,
-            is_deleted,
-        })
+    fn from_raw(columns: Vec<RawColumn>) -> Result<Vec<Self>, Error> {
+        let mut columns = columns.into_iter();
+        let table = columns.next().unwrap().read_values()?;
+        let length = table.len();
+        let mut table = table.into_iter();
+        let mut created_1 = columns.next().unwrap().read_values()?.into_iter();
+        let mut created_2 = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_1 = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_2 = columns.next().unwrap().read_values()?.into_iter();
+        let mut table_name = columns.next().unwrap().read_values()?.into_iter();
+        let mut is_deleted = columns.next().unwrap().read_bools()?.into_iter();
+        let mut out = Vec::with_capacity(table.len());
+        for _ in 0..length {
+            out.push(DbSchemaRow {
+                table: RawValues(vec![table.next().unwrap()]).try_into()?,
+                created: RawValues(vec![created_1.next().unwrap(), created_2.next().unwrap()])
+                    .try_into()?,
+                modified: RawValues(vec![modified_1.next().unwrap(), modified_2.next().unwrap()])
+                    .try_into()?,
+                table_name: RawValues(vec![table_name.next().unwrap()]).try_into()?,
+                is_deleted: is_deleted.next().unwrap(),
+            });
+        }
+        Ok(out)
+
+        // let mut values = values.into_iter();
+        // let table = RawValues(vec![values.next().unwrap()]).try_into()?;
+        // let created = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        // let modified =
+        //     RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
+        // let table_name = RawValues(vec![values.next().unwrap()]).try_into()?;
+        // let is_deleted = RawValues(vec![values.next().unwrap()]).try_into()?;
+        // Ok(DbSchemaRow {
+        //     table,
+        //     created,
+        //     modified,
+        //     table_name,
+        //     is_deleted,
+        // })
     }
 }
 
+/// Saves the database schema to the requested directory.
 pub fn save_db_schema(
     tables: Vec<TableSchema>,
     directory: impl AsRef<Path>,
@@ -431,10 +488,24 @@ pub fn save_db_schema(
     table_table.save(directory.as_ref())?;
     db_table.save(directory)
 }
-pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, StorageError> {
+
+/// Reads the dtatabase schema from the requested directory
+pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, Error> {
     let mut out = Vec::new();
     let db_schema = Arc::new(db_schema_schema());
     let db_table = Table::read(directory.as_ref(), db_schema)?;
+    let table_schema = Arc::new(table_schema_schema());
+    let table_table = Table::read(directory, table_schema)?;
+    let table_rows: Vec<TableSchemaRow> = table_table.to_rows()?;
+    let columns = table_rows
+        .iter()
+        .map(|tr| ColumnSchema {
+            name: &tr.column_name,
+            id: tr.column,
+            default: 
+        })
+        .collect::<Vec<_>>();
+    for db_row in db_table.to_rows::<DbSchemaRow>() {}
     Ok(out)
 }
 

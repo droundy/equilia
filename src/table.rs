@@ -6,11 +6,10 @@ use crate::column::RawColumn;
 use crate::lens::TableId;
 use crate::schema::TableSchema;
 use crate::value::{RawKind, RawValue};
-use crate::LensError;
-use thiserror::Error;
+use crate::Error;
 
 /// An invalid column error
-#[derive(Debug, Error)]
+#[derive(Debug, thiserror::Error)]
 pub enum InvalidColumn {
     #[error("Wrong kind: column {column} wanted {wanted} not {found}")]
     WrongKind {
@@ -42,13 +41,18 @@ impl Table {
         }
         Ok(Table { schema, columns })
     }
+
+    /// Extract rows
+    pub fn to_rows<R: IsRow>(&self) -> Result<Vec<R>, Error> {
+        R::from_raw(self.columns.clone())
+    }
 }
 
 /// A type that could represent a row of a table
 pub trait IsRow: Sized {
     const TABLE_ID: TableId;
     fn to_raw(self) -> Vec<RawValue>;
-    fn from_raw(values: Vec<RawValue>) -> Result<Self, LensError>;
+    fn from_raw(values: Vec<RawColumn>) -> Result<Vec<Self>, Error>;
 }
 
 /// A not-yet-sorted table

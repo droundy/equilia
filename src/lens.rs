@@ -1,16 +1,20 @@
 use crate::value::{RawKind, RawValue};
+use thiserror::Error;
 
 /// A vec of values
 pub struct RawValues(pub Vec<RawValue>);
 
 /// A conversion error
+#[derive(Debug, Error)]
 pub enum LensError {
     /// The kinds of columns were invalid
+    #[error("Invalid kinds: {expected}")]
     InvalidKinds {
         /// A human-friendly description of the format of this type.
         expected: String,
     },
     /// The values of columns were invalid
+    #[error("Invalid value: {value}")]
     InvalidValue {
         /// The particular invalid value
         value: String,

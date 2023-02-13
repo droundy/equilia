@@ -5,6 +5,8 @@
 use encoding::{ReadEncoded, StorageError};
 use storage::Storage;
 
+use crate::value::RawValue;
+
 use self::encoding::WriteEncoded;
 
 mod boolcolumn;
@@ -16,6 +18,7 @@ pub mod u64_generic;
 pub(crate) use boolcolumn::BoolColumn;
 
 /// A raw column
+#[derive(Clone)]
 pub struct RawColumn {
     inner: RawColumnInner,
 }
@@ -146,6 +149,35 @@ const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"00u64gen");
 const BYTES_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"000bytes");
 
 impl RawColumn {
+    /// This isn't what we'll really want to use, but might be useful for now.
+    ///
+    /// It also illustrates how some common logic can be abstracted away into a
+    /// helper function like the `column_to_vec` below.
+    pub fn read_values(&self) -> Result<Vec<RawValue>, StorageError> {
+        match &self.inner {
+            RawColumnInner::Bool(_) => {
+                Ok(self.read_bools()?.into_iter().map(RawValue::Bool).collect())
+            }
+            RawColumnInner::BytesVVV(_)
+            | RawColumnInner::BytesV10(_)
+            | RawColumnInner::BytesFVV(_)
+            | RawColumnInner::BytesF1V(_) => Ok(self
+                .read_bytes()?
+                .into_iter()
+                .map(RawValue::Bytes)
+                .collect()),
+            RawColumnInner::U64VV(_)
+            | RawColumnInner::U64_8(_)
+            | RawColumnInner::U64_8_1(_)
+            | RawColumnInner::U64_16(_)
+            | RawColumnInner::U64_16_1(_)
+            | RawColumnInner::U64_32(_)
+            | RawColumnInner::U64_32_1(_)
+            | RawColumnInner::U64V1(_) => {
+                Ok(self.read_u64()?.into_iter().map(RawValue::U64).collect())
+            }
+        }
+    }
     /// This isn't what we'll really want to use, but might be useful for
     /// testing?
     ///
@@ -283,6 +315,7 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
     Ok(out)
 }
 
+#[derive(Clone)]
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
 

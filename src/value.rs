@@ -1,3 +1,8 @@
+use crate::{
+    lens::{LensId, RawValues},
+    Lens, LensError,
+};
+
 /// The type of data actually stored in a column.
 ///
 /// This is in distinction from a logical [`Kind`], which might
@@ -33,6 +38,70 @@ pub enum RawValue {
     Bool(bool),
     /// A bytes value
     Bytes(Vec<u8>),
+}
+
+impl TryFrom<RawValues> for RawValue {
+    type Error = LensError;
+    fn try_from(value: RawValues) -> Result<Self, Self::Error> {
+        let badvalue = Err(LensError::InvalidKinds {
+            expected: "a serialized RawValue".to_string(),
+        });
+        if let [RawValue::Bytes(b)] = value.0.as_slice() {
+            match b.first() {
+                None => badvalue,
+                Some(0) => {
+                    if b.len() != 2 || b[1] > 1 {
+                        badvalue
+                    } else {
+                        Ok(RawValue::Bool(b[1] == 1))
+                    }
+                }
+                Some(1) => {
+                    if b.len() != 9 {
+                        badvalue
+                    } else {
+                        Ok(RawValue::U64(u64::from_be_bytes(
+                            b[1..9].try_into().unwrap(),
+                        )))
+                    }
+                }
+                Some(2) => Ok(RawValue::Bytes(b[1..].to_vec())),
+                Some(_) => badvalue,
+            }
+        } else {
+            badvalue
+        }
+    }
+}
+impl From<RawValue> for RawValues {
+    fn from(v: RawValue) -> Self {
+        let bytes = match v {
+            RawValue::Bool(b) => vec![0, b as u8],
+            RawValue::U64(v) => {
+                let mut bytes = Vec::with_capacity(9);
+                bytes.push(1);
+                bytes.extend(v.to_be_bytes());
+                bytes
+            }
+            RawValue::Bytes(b) => {
+                let mut bytes = Vec::with_capacity(9);
+                bytes.push(2);
+                bytes.extend(b);
+                bytes
+            }
+        };
+        RawValues(vec![RawValue::Bytes(bytes)])
+    }
+}
+
+impl Lens for RawValue {
+    const RAW_KINDS: &'static [RawKind] = &[RawKind::Bytes];
+
+    const LENS_ID: crate::lens::LensId = LensId(*b"rawvalue________");
+
+    const EXPECTED: &'static str = "a serialized RawValue";
+
+    const NAMES: &'static [&'static str] = &["value"];
 }
 
 impl RawValue {

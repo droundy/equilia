@@ -112,6 +112,8 @@ define_lens_id! {TableId, b"__TableId_______"}
 define_lens_id! {LensId, b"__LensId________"}
 
 /// A way of looking at a table or modifying it, a kind of pseudocolumn.
+///
+/// FIXME eventually we'll want a way to create a Column<Self> out of a Vec<RawColumn>.
 pub trait Lens: Into<RawValues> + TryFrom<RawValues, Error = LensError> {
     /// The kinds of raw columns involved
     const RAW_KINDS: &'static [RawKind];

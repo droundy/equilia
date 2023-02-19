@@ -68,9 +68,10 @@ pub struct ColumnSchema<T> {
 /// The schema of a raw column, including the `LensId` metadata
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RawColumnSchema {
+    pub(crate) order: u64,
+    id: ColumnId,
     default: RawValue,
     name: String,
-    id: ColumnId,
     lens: LensId,
 }
 
@@ -120,18 +121,12 @@ impl std::fmt::Display for RawColumnSchema {
     }
 }
 
-/// A set of ordered raw columns.
-///
-/// Note that it is a set rather than a mapping of order to column, because it
-/// is perfectly legal to have two  columns with the same `order` value.
-type OrderedRawColumns = BTreeSet<(u64, RawColumnSchema)>;
-
 /// The schema of a table
 pub struct TableSchema {
     name: String,
     pub(crate) id: TableId,
-    primary: OrderedRawColumns, // must all have Aggregation = None
-    aggregations: BTreeMap<Aggregation, OrderedRawColumns>,
+    primary: BTreeSet<RawColumnSchema>, // must all have Aggregation = None
+    aggregations: BTreeMap<Aggregation, BTreeSet<RawColumnSchema>>,
 }
 
 impl TableSchema {
@@ -148,12 +143,15 @@ impl TableSchema {
     /// Add columns to the primary key
     pub fn add_primary(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         let first_order = if let Some(o) = self.primary.iter().next_back() {
-            o.0 + 1
+            o.order + 1
         } else {
             0
         };
-        for (o, c) in columns.enumerate() {
-            self.primary.insert((first_order + o as u64, c));
+        for (o, mut c) in columns.enumerate() {
+            if c.order == 0 {
+                c.order = first_order + o as u64;
+            }
+            self.primary.insert(c);
         }
     }
 
@@ -161,7 +159,15 @@ impl TableSchema {
     pub fn add_max(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         self.aggregations.insert(
             Aggregation::Max(rand::random()),
-            columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
         );
     }
 
@@ -169,7 +175,15 @@ impl TableSchema {
     pub fn add_min(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         self.aggregations.insert(
             Aggregation::Min(rand::random()),
-            columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
         );
     }
 
@@ -177,12 +191,20 @@ impl TableSchema {
     pub fn add_sum(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         self.aggregations.insert(
             Aggregation::Sum,
-            columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
         );
     }
 
     /// All the columns
-    pub(crate) fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
+    pub(crate) fn columns(&self) -> impl Iterator<Item = &RawColumnSchema> {
         self.primary
             .iter()
             .chain(self.aggregations.iter().flat_map(|a| a.1.iter()))
@@ -196,12 +218,12 @@ impl TableSchema {
     fn to_table_rows(&self) -> Vec<TableSchemaRow> {
         let table = self.id;
         let mut out = Vec::new();
-        for (order, c) in self.primary.iter() {
+        for c in self.primary.iter() {
             out.push(TableSchemaRow {
                 table,
                 column: c.id,
                 lens: c.lens,
-                order: *order,
+                order: c.order,
                 aggregate: None,
                 modified: std::time::SystemTime::now(),
                 column_name: c.name.to_string(),
@@ -230,7 +252,7 @@ impl TableSchema {
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CREATE TABLE {} ID {} {{", self.name, self.id)?;
-        for (_, c) in self.columns() {
+        for c in self.columns() {
             writeln!(f, "    {c},")?;
         }
         column_list("PRIMARY KEY", &self.primary, f)?;
@@ -246,10 +268,10 @@ impl std::fmt::Display for TableSchema {
 }
 fn column_list(
     keyword: &str,
-    v: &OrderedRawColumns,
+    v: &BTreeSet<RawColumnSchema>,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
-    let mut columns = v.iter().map(|x| &x.1);
+    let mut columns = v.iter();
     if let Some(c) = columns.next() {
         write!(f, "    {keyword} ( {}", c.name)?;
         for c in columns {
@@ -293,6 +315,7 @@ impl<T: Lens + Clone> ColumnSchema<T> {
         vs.0.into_iter()
             .enumerate()
             .map(move |(idx, default)| RawColumnSchema {
+                order: 0,
                 name: format!("{}.{}", name, T::NAMES[idx]),
                 default,
                 id,
@@ -490,10 +513,10 @@ pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, E
         let name = db_row.table_name;
         let id = db_row.table;
         let mut primary = BTreeSet::new();
-        let mut aggregations: BTreeMap<Aggregation, BTreeSet<(u64, RawColumnSchema)>> =
-            BTreeMap::new();
+        let mut aggregations: BTreeMap<Aggregation, BTreeSet<RawColumnSchema>> = BTreeMap::new();
         for tr in table_columns.remove(&id).unwrap_or_default().into_iter() {
             let c = RawColumnSchema {
+                order: tr.order,
                 name: tr.column_name,
                 id: tr.column,
                 default: tr.default,
@@ -501,10 +524,10 @@ pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, E
             };
             match tr.aggregate {
                 None => {
-                    primary.insert((tr.order, c));
+                    primary.insert(c);
                 }
                 Some(agg) => {
-                    aggregations.entry(agg).or_default().insert((tr.order, c));
+                    aggregations.entry(agg).or_default().insert(c);
                 }
             }
         }

@@ -35,7 +35,7 @@ impl Table {
     ) -> Result<Self, StorageError> {
         let directory: &Path = directory.as_ref();
         let mut columns = Vec::new();
-        for schema in schema.columns().map(|(_, c)| c) {
+        for schema in schema.columns() {
             let path = directory.join(schema.file_name());
             columns.push(RawColumn::open(path)?);
         }
@@ -79,10 +79,10 @@ impl TableBuilder {
             });
         }
         row.reverse();
-        for ((column, c), v) in self.schema.columns().zip(row.iter()) {
+        for (c, v) in self.schema.columns().zip(row.iter()) {
             if c.kind() != v.kind() {
                 return Err(InvalidColumn::WrongKind {
-                    column: *column,
+                    column: c.order,
                     found: v.kind(),
                     wanted: c.kind(),
                 });
@@ -102,7 +102,7 @@ impl TableBuilder {
     pub fn table(mut self) -> Table {
         self.rows.sort_unstable();
         let mut columns = Vec::new();
-        for (idx, c) in self.schema.columns().map(|(_, c)| c).enumerate() {
+        for (idx, c) in self.schema.columns().enumerate() {
             match c.kind() {
                 RawKind::Bool => {
                     let mut vals = Vec::new();
@@ -139,7 +139,7 @@ impl TableBuilder {
         let directory: &Path = directory.as_ref();
         std::fs::create_dir_all(directory)?;
         self.rows.sort_unstable();
-        for (idx, schema) in self.schema.columns().map(|(_, c)| c).enumerate() {
+        for (idx, schema) in self.schema.columns().enumerate() {
             let filename = directory.join(schema.file_name());
             let mut f = std::fs::File::create(filename)?;
             match schema.kind() {

@@ -25,7 +25,6 @@ pub enum InvalidColumn {
 
 /// A table with values in it
 pub struct Table {
-    schema: Arc<TableSchema>,
     columns: Vec<RawColumn>,
 }
 
@@ -43,7 +42,7 @@ impl Table {
             columns.push(RawColumn::open(path)?);
         }
         println!("Finished reading columns for table {schema}");
-        Ok(Table { schema, columns })
+        Ok(Table { columns })
     }
 
     /// Extract rows
@@ -143,10 +142,7 @@ impl TableBuilder {
             }
         }
 
-        Table {
-            schema: self.schema,
-            columns,
-        }
+        Table { columns }
     }
 
     /// Create the table on disk

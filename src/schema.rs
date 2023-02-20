@@ -79,7 +79,7 @@ pub struct RawColumnSchema {
 ///
 /// This stores both the RawColumnSchema information (which describes the column
 /// itself and how to read it) and where it fits into the TableSchema.
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TableSchemaRow {
     /// The id of the table this belongs to
     table: TableId,
@@ -122,6 +122,7 @@ impl std::fmt::Display for RawColumnSchema {
 }
 
 /// The schema of a table
+#[derive(Clone)]
 pub struct TableSchema {
     name: String,
     pub(crate) id: TableId,
@@ -212,7 +213,12 @@ impl TableSchema {
 
     /// The number of columns
     pub fn num_columns(&self) -> usize {
-        self.primary.len() + self.aggregations.len()
+        self.primary.len()
+            + self
+                .aggregations
+                .iter()
+                .map(|(_, c)| c.len())
+                .sum::<usize>()
     }
 
     fn to_table_rows(&self) -> Vec<TableSchemaRow> {
@@ -540,6 +546,17 @@ pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, E
         })
     }
     Ok(out)
+}
+
+#[test]
+fn save_and_load_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    let table_schema = table_schema_schema();
+    let db_schema = db_schema_schema();
+    save_db_schema(vec![table_schema.clone(), db_schema.clone()], dir.as_ref()).unwrap();
+    let schemas = load_db_schema(dir).unwrap();
+    assert!(schemas.iter().any(|schema| schema.id == table_schema.id));
+    assert!(schemas.iter().any(|schema| schema.id == db_schema.id));
 }
 
 /// This is the schema for the table that holds the schema of the db itself

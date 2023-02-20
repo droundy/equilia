@@ -658,12 +658,12 @@ fn format_db_tables() {
             column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order. U64 DEFAULT 0 LENS u64,
             lens. Bytes DEFAULT 'bool____________' LENS __LensId,
-            default. U64 DEFAULT 0 LENS u64,
+            default.value Bytes DEFAULT '  ' LENS rawvalue,
             aggregate. Bytes DEFAULT '                ' LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
             column_name. Bytes DEFAULT '' LENS String,
-            PRIMARY KEY ( table., column., order., lens., default., aggregate. ),
+            PRIMARY KEY ( table., column., order., lens., default.value, aggregate. ),
             MAX ( modified.seconds, modified.subsecond_nanos, column_name. ),
         };
     "#]];

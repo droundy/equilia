@@ -365,6 +365,12 @@ impl IsRow for TableSchemaRow {
             .read_u64()
             .context("order")?
             .into_iter();
+        let mut lens = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("lens id")?
+            .into_iter();
         let mut default = columns
             .next()
             .unwrap()
@@ -394,12 +400,6 @@ impl IsRow for TableSchemaRow {
             .unwrap()
             .read_values()
             .context("column name")?
-            .into_iter();
-        let mut lens = columns
-            .next()
-            .unwrap()
-            .read_values()
-            .context("lens id")?
             .into_iter();
         let mut out = Vec::with_capacity(length);
         for _ in 0..length {

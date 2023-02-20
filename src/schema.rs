@@ -580,30 +580,32 @@ pub fn db_schema_schema() -> TableSchema {
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
         CREATE TABLE columns ID __table_schemas {
-            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
-            column Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
-            order U64 DEFAULT 0 LENS u64,
-            aggregate U64 DEFAULT 0 LENS __Aggregation,
+            table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
+            order. U64 DEFAULT 0 LENS u64,
+            lens. U64 DEFAULT 0 LENS u64,
+            default. U64 DEFAULT 0 LENS u64,
+            aggregate. Bytes DEFAULT '                ' LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
-            column_name Bytes DEFAULT '' LENS String,
-            PRIMARY KEY ( table, column, order, aggregate ),
-            MAX ( modified.seconds, modified.subsecond_nanos, column_name ),
+            column_name. Bytes DEFAULT '' LENS String,
+            PRIMARY KEY ( table., column., order., lens., default., aggregate. ),
+            MAX ( modified.seconds, modified.subsecond_nanos, column_name. ),
         };
     "#]];
     expected.assert_eq(table_schema_schema().to_string().as_str());
 
     let expected = expect_test::expect![[r#"
         CREATE TABLE tables ID __db_schema {
-            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             created.seconds U64 DEFAULT 0 LENS time::SystemTime,
             created.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
-            table_name Bytes DEFAULT '' LENS String,
-            is_deleted Bool DEFAULT false LENS bool,
-            PRIMARY KEY ( table, created.seconds, created.subsecond_nanos ),
-            MAX ( modified.seconds, modified.subsecond_nanos, table_name, is_deleted ),
+            table_name. Bytes DEFAULT '' LENS String,
+            is_deleted. Bool DEFAULT false LENS bool,
+            PRIMARY KEY ( table., created.seconds, created.subsecond_nanos ),
+            MAX ( modified.seconds, modified.subsecond_nanos, table_name., is_deleted. ),
         };
     "#]];
     expected.assert_eq(db_schema_schema().to_string().as_str());

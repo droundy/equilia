@@ -39,8 +39,10 @@ impl Table {
         let mut columns = Vec::new();
         for schema in schema.columns() {
             let path = directory.join(schema.file_name());
+            println!("reading file {path:?} for {schema}");
             columns.push(RawColumn::open(path)?);
         }
+        println!("Finished reading columns for table {schema}");
         Ok(Table { schema, columns })
     }
 
@@ -73,7 +75,7 @@ impl TableBuilder {
     }
 
     /// Add a row
-    pub fn insert_raw_row(&mut self, mut row: Vec<RawValue>) -> Result<(), InvalidColumn> {
+    pub fn insert_raw_row(&mut self, row: Vec<RawValue>) -> Result<(), InvalidColumn> {
         if row.len() != self.schema.num_columns() {
             return Err(InvalidColumn::WrongNumber {
                 found: row.len(),

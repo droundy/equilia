@@ -31,10 +31,10 @@ impl Format {
     const fn from_bytes(value: u64) -> Result<Self, StorageError> {
         let bytes = value.to_be_bytes();
         let Some(value) = BitWidth::new(bytes[0]) else {
-            return Err(StorageError::OutOfBounds("oops"));
+            return Err(StorageError::OutOfBounds("oops", Vec::new()));
         };
         let Some(runlength) = BitWidth::new(bytes[1]) else {
-            return Err(StorageError::OutOfBounds("oops"));
+            return Err(StorageError::OutOfBounds("oops", Vec::new()));
         };
         Ok(Format { value, runlength })
     }
@@ -198,7 +198,7 @@ impl<const F: u64> IsRawColumn for U64<F> {
         let min = input.iter().map(|(v, _)| *v).min().unwrap_or(0);
         let max = input.iter().map(|(v, _)| *v).max().unwrap_or(0);
         if max - min > format.value.max() {
-            return Err(StorageError::OutOfBounds("oops"));
+            return Err(StorageError::OutOfBounds("oops", Vec::new()));
         }
         out.write_u64(min)?;
         out.write_u64(max)?;
@@ -212,7 +212,7 @@ impl<const F: u64> IsRawColumn for U64<F> {
     fn open(mut storage: Storage) -> Result<Self, StorageError> {
         let magic = storage.read_u64()?;
         if magic != Self::MAGIC {
-            return Err(StorageError::BadMagic(magic));
+            return Err(StorageError::BadMagic(magic, Vec::new()));
         }
         let n_rows = storage.read_u64()?;
         let n_chunks = storage.read_u64()?;

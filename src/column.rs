@@ -290,7 +290,7 @@ impl RawColumn {
             u64_generic::VariableVariable::MAGIC => {
                 RawColumnInner::U64VV(u64_generic::VariableVariable::open(storage)?)
             }
-            _ => return Err(StorageError::BadMagic(magic)),
+            _ => return Err(StorageError::BadMagic(magic, Vec::new())),
         };
         Ok(RawColumn { inner })
     }

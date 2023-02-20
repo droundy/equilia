@@ -12,7 +12,7 @@ mod value;
 
 use column::encoding::StorageError;
 pub use column::RawColumn;
-pub use lens::{Lens, LensError};
+pub use lens::{Context, Lens, LensError};
 pub use schema::{
     db_schema_schema, load_db_schema, save_db_schema, table_schema_schema, ColumnSchema,
     RawColumnSchema, TableSchema,
@@ -29,6 +29,15 @@ pub enum Error {
     /// Lens trouble
     #[error("Type error: {0}")]
     Lens(#[from] LensError),
+}
+
+impl Context for Error {
+    fn context<S: ToString>(self, context: S) -> Self {
+        match self {
+            Error::Lens(e) => Error::Lens(e.context(context)),
+            Error::Storage(e) => Error::Storage(e.context(context)),
+        }
+    }
 }
 
 /// A "raw" row, as it will be sorted and stored.

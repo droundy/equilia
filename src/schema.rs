@@ -6,7 +6,7 @@ use crate::column::encoding::StorageError;
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
 use crate::table::IsRow;
 use crate::value::{RawKind, RawValue};
-use crate::{Error, LensError, RawColumn, Table, TableBuilder};
+use crate::{Context, Error, LensError, RawColumn, Table, TableBuilder};
 
 /// A kind of column to aggregate
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -53,6 +53,7 @@ impl TryFrom<RawValues> for Option<Aggregation> {
             [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] => Ok(Some(Aggregation::Sum)),
             v => Err(LensError::InvalidValue {
                 value: format!("Unexpected: {v:?}"),
+                context: Vec::new(),
             }),
         }
     }
@@ -349,24 +350,70 @@ impl IsRow for TableSchemaRow {
     }
     fn from_raw(columns: Vec<RawColumn>) -> Result<Vec<Self>, Error> {
         let mut columns = columns.into_iter();
-        let table = columns.next().unwrap().read_values()?;
+        let table = columns.next().unwrap().read_values().context("table id")?;
         let length = table.len();
         let mut table = table.into_iter();
-        let mut column = columns.next().unwrap().read_values()?.into_iter();
-        let mut order = columns.next().unwrap().read_u64()?.into_iter();
-        let mut default = columns.next().unwrap().read_values()?.into_iter();
-        let mut aggregate = columns.next().unwrap().read_values()?.into_iter();
-        let mut modified_1 = columns.next().unwrap().read_values()?.into_iter();
-        let mut modified_2 = columns.next().unwrap().read_values()?.into_iter();
-        let mut column_name = columns.next().unwrap().read_values()?.into_iter();
-        let mut lens = columns.next().unwrap().read_values()?.into_iter();
+        let mut column = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("column id")?
+            .into_iter();
+        let mut order = columns
+            .next()
+            .unwrap()
+            .read_u64()
+            .context("order")?
+            .into_iter();
+        let mut default = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("default")?
+            .into_iter();
+        let mut aggregate = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("aggregation")?
+            .into_iter();
+        let mut modified_1 = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("modified seconds")?
+            .into_iter();
+        let mut modified_2 = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("modified subsec")?
+            .into_iter();
+        let mut column_name = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("column name")?
+            .into_iter();
+        let mut lens = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("lens id")?
+            .into_iter();
         let mut out = Vec::with_capacity(length);
         for _ in 0..length {
             out.push(TableSchemaRow {
-                table: RawValues(vec![table.next().unwrap()]).try_into()?,
-                column: RawValues(vec![column.next().unwrap()]).try_into()?,
+                table: RawValues(vec![table.next().unwrap()])
+                    .try_into()
+                    .context("converting table id")?,
+                column: RawValues(vec![column.next().unwrap()])
+                    .try_into()
+                    .context("converting column id")?,
                 order: order.next().unwrap(),
-                lens: RawValues(vec![lens.next().unwrap()]).try_into()?,
+                lens: RawValues(vec![lens.next().unwrap()])
+                    .try_into()
+                    .context("converting lens id")?,
                 aggregate: RawValues(vec![aggregate.next().unwrap()]).try_into()?,
                 modified: RawValues(vec![modified_1.next().unwrap(), modified_2.next().unwrap()])
                     .try_into()?,
@@ -508,16 +555,21 @@ pub fn save_db_schema(
 pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, Error> {
     let mut out = Vec::new();
     let db_schema = Arc::new(db_schema_schema());
-    let db_table = Table::read(directory.as_ref(), db_schema)?;
+    let db_table = Table::read(directory.as_ref(), db_schema).context("read tables")?;
     let table_schema = Arc::new(table_schema_schema());
-    let table_table = Table::read(directory, table_schema)?;
-    let mut table_rows: Vec<TableSchemaRow> = table_table.to_rows()?;
+    let table_table = Table::read(directory, table_schema).context("read columns")?;
+    println!("I have read the table table");
+    let mut table_rows: Vec<TableSchemaRow> = table_table.to_rows().context("columns to rows")?;
     table_rows.sort();
     let mut table_columns: HashMap<TableId, Vec<TableSchemaRow>> = HashMap::new();
     for tr in table_rows.into_iter() {
         table_columns.entry(tr.table).or_default().push(tr);
     }
-    for db_row in db_table.to_rows::<DbSchemaRow>()?.into_iter() {
+    for db_row in db_table
+        .to_rows::<DbSchemaRow>()
+        .context("tables to rows")?
+        .into_iter()
+    {
         let name = db_row.table_name;
         let id = db_row.table;
         let mut primary = BTreeSet::new();
@@ -559,6 +611,7 @@ fn save_and_load_schema() {
     save_db_schema(vec![table_schema.clone(), db_schema.clone()], dir.as_ref()).unwrap();
     println!("\nloading schema\n");
     let schemas = load_db_schema(dir).unwrap();
+    println!("\nI have loaded the shcemas!\n");
     assert!(schemas.iter().any(|schema| schema.id == table_schema.id));
     assert!(schemas.iter().any(|schema| schema.id == db_schema.id));
 }

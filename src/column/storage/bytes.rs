@@ -44,10 +44,10 @@ impl crate::column::encoding::ReadEncoded for Bytes {
         offset: u64,
     ) -> Result<(), crate::column::encoding::StorageError> {
         if offset as usize + buf.len() > self.buffer.len() {
-            Err(StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "failed to read_exact",
-            )))
+            Err(StorageError::Io(
+                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "failed to read_exact"),
+                Vec::new(),
+            ))
         } else {
             buf.clone_from_slice(&self.buffer[offset as usize..offset as usize + buf.len()]);
             Ok(())

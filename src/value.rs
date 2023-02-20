@@ -45,6 +45,8 @@ impl TryFrom<RawValues> for RawValue {
     fn try_from(value: RawValues) -> Result<Self, Self::Error> {
         let badvalue = Err(LensError::InvalidKinds {
             expected: "a serialized RawValue".to_string(),
+            found: value.clone(),
+            context: Vec::new(),
         });
         if let [RawValue::Bytes(b)] = value.0.as_slice() {
             match b.first() {

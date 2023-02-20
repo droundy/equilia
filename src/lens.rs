@@ -1,24 +1,82 @@
+use std::fmt::Debug;
+
 use crate::value::{RawKind, RawValue};
 use thiserror::Error;
 
 /// A vec of values
+#[derive(Debug, Clone)]
 pub struct RawValues(pub Vec<RawValue>);
 
 /// A conversion error
-#[derive(Debug, Error)]
+#[derive(Error)]
 pub enum LensError {
     /// The kinds of columns were invalid
-    #[error("Invalid kinds: {expected}")]
+    #[error("\nInvalid kinds: {expected} but found {found:?}{}", Self::context_string(&context))]
     InvalidKinds {
         /// A human-friendly description of the format of this type.
         expected: String,
+        /// The value that failed to match
+        found: RawValues,
+        /// The context of the error
+        context: Vec<String>,
     },
     /// The values of columns were invalid
-    #[error("Invalid value: {value}")]
+    #[error("\nInvalid value: {value}{}", Self::context_string(&context))]
     InvalidValue {
         /// The particular invalid value
         value: String,
+        /// The context of the error
+        context: Vec<String>,
     },
+}
+
+impl Debug for LensError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+/// A type that can have context added to it.
+pub trait Context {
+    /// Add some caller context.
+    fn context<S: ToString>(self, context: S) -> Self;
+    /// Print some context nicely
+    fn context_string(context: &[String]) -> String {
+        if context.is_empty() {
+            "".to_string()
+        } else {
+            format!("\n    caused by: {}", context.join("\n           by: "))
+        }
+    }
+}
+
+impl<R, E: Context> Context for Result<R, E> {
+    fn context<S: ToString>(self, s: S) -> Self {
+        self.map_err(|e| e.context(s))
+    }
+}
+
+impl Context for LensError {
+    fn context<S: ToString>(self, s: S) -> Self {
+        match self {
+            LensError::InvalidKinds {
+                expected,
+                found,
+                mut context,
+            } => {
+                context.push(s.to_string());
+                LensError::InvalidKinds {
+                    expected,
+                    found,
+                    context: context,
+                }
+            }
+            LensError::InvalidValue { value, mut context } => {
+                context.push(s.to_string());
+                LensError::InvalidValue { value, context }
+            }
+        }
+    }
 }
 
 macro_rules! define_lens_id {
@@ -57,11 +115,15 @@ macro_rules! define_lens_id {
                         } else {
                             Err(LensError::InvalidKinds {
                                 expected: Self::EXPECTED.to_string(),
+                                found: v,
+                                context: Vec::new(),
                             })
                         }
                     }
                     _ => Err(LensError::InvalidKinds {
                         expected: Self::EXPECTED.to_string(),
+                        found: v,
+                        context: Vec::new(),
                     }),
                 }
             }
@@ -144,6 +206,8 @@ impl TryFrom<RawValues> for u64 {
             &[RawValue::U64(v)] => Ok(v),
             _ => Err(LensError::InvalidKinds {
                 expected: Self::EXPECTED.to_string(),
+                found: value,
+                context: Vec::new(),
             }),
         }
     }
@@ -176,6 +240,8 @@ impl TryFrom<RawValues> for std::time::SystemTime {
                 + Duration::from_nanos(nanos)),
             _ => Err(LensError::InvalidKinds {
                 expected: Self::EXPECTED.to_string(),
+                found: value,
+                context: Vec::new(),
             }),
         }
     }
@@ -201,10 +267,13 @@ impl TryFrom<RawValues> for String {
             [RawValue::Bytes(b)] => {
                 String::from_utf8(b.clone()).map_err(|e| LensError::InvalidValue {
                     value: format!("{e}"),
+                    context: Vec::new(),
                 })
             }
             _ => Err(LensError::InvalidKinds {
                 expected: Self::EXPECTED.to_string(),
+                found: value,
+                context: Vec::new(),
             }),
         }
     }
@@ -230,6 +299,8 @@ impl TryFrom<RawValues> for bool {
             &[RawValue::Bool(b)] => Ok(b),
             _ => Err(LensError::InvalidKinds {
                 expected: Self::EXPECTED.to_string(),
+                found: value,
+                context: Vec::new(),
             }),
         }
     }

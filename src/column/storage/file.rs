@@ -49,10 +49,10 @@ impl crate::column::encoding::ReadEncoded for File {
         offset: u64,
     ) -> Result<(), crate::column::encoding::StorageError> {
         if offset + buf.len() as u64 > self.length {
-            Err(StorageError::Io(std::io::Error::new(
-                std::io::ErrorKind::UnexpectedEof,
-                "failed to read_exact",
-            )))
+            Err(StorageError::Io(
+                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "failed to read_exact"),
+                Vec::new(),
+            ))
         } else {
             use std::os::unix::fs::FileExt;
             self.file.read_exact_at(buf, offset)?;

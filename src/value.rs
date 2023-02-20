@@ -30,7 +30,7 @@ impl std::fmt::Display for RawKind {
 }
 
 /// A value that could exist in a column
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RawValue {
     /// A `u64` value
     U64(u64),
@@ -38,6 +38,12 @@ pub enum RawValue {
     Bool(bool),
     /// A bytes value
     Bytes(Vec<u8>),
+}
+
+impl std::fmt::Debug for RawValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
 }
 
 impl TryFrom<RawValues> for RawValue {

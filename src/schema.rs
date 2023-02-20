@@ -335,13 +335,15 @@ impl IsRow for TableSchemaRow {
     fn to_raw(self) -> Vec<RawValue> {
         let mut out = Vec::with_capacity(9);
         out.extend(RawValues::from(self.table).0);
+        println!("table is {:?}", RawValues::from(self.table).0);
+        println!("column is {:?}", RawValues::from(self.column).0);
         out.extend(RawValues::from(self.column).0);
         out.extend(RawValues::from(self.order).0);
         out.extend(RawValues::from(self.lens).0);
+        out.extend(RawValues::from(self.default).0);
         out.extend(RawValues::from(self.aggregate).0);
         out.extend(RawValues::from(self.modified).0);
         out.extend(RawValues::from(self.column_name).0);
-        out.extend(RawValues::from(self.lens).0);
         assert_eq!(out.len(), 9);
         out
     }
@@ -396,12 +398,12 @@ pub fn table_schema_schema() -> TableSchema {
             .raw(),
     );
     table.add_primary(
-        ColumnSchema::with_default("lens", 0u64)
+        ColumnSchema::with_default("lens", bool::LENS_ID)
             .with_id(ColumnId::const_new(b"column-lens_____"))
             .raw(),
     );
     table.add_primary(
-        ColumnSchema::with_default("default", 0u64)
+        ColumnSchema::with_default("default", RawValue::Bool(false))
             .with_id(ColumnId::const_new(b"column-default__"))
             .raw(),
     );
@@ -553,7 +555,9 @@ fn save_and_load_schema() {
     let dir = tempfile::tempdir().unwrap();
     let table_schema = table_schema_schema();
     let db_schema = db_schema_schema();
+    println!("\nsaving schema\n");
     save_db_schema(vec![table_schema.clone(), db_schema.clone()], dir.as_ref()).unwrap();
+    println!("\nloading schema\n");
     let schemas = load_db_schema(dir).unwrap();
     assert!(schemas.iter().any(|schema| schema.id == table_schema.id));
     assert!(schemas.iter().any(|schema| schema.id == db_schema.id));
@@ -600,7 +604,7 @@ fn format_db_tables() {
             table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order. U64 DEFAULT 0 LENS u64,
-            lens. U64 DEFAULT 0 LENS u64,
+            lens. Bytes DEFAULT 'bool____________' LENS __LensId,
             default. U64 DEFAULT 0 LENS u64,
             aggregate. Bytes DEFAULT '                ' LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,

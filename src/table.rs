@@ -13,7 +13,9 @@ use crate::Error;
 pub enum InvalidColumn {
     #[error("Wrong kind: column {column} wanted {wanted} not {found}")]
     WrongKind {
-        column: u64,
+        table: String,
+        column: String,
+        column_number: u64,
         found: RawKind,
         wanted: RawKind,
     },
@@ -78,11 +80,22 @@ impl TableBuilder {
                 wanted: self.schema.num_columns(),
             });
         }
-        row.reverse();
+        // row.reverse();
+        for (c, v) in self.schema.columns().zip(row.iter()) {
+            println!(
+                "{:2} column: {}:   wants {} got {}",
+                c.order,
+                c,
+                c.kind(),
+                v.kind()
+            );
+        }
         for (c, v) in self.schema.columns().zip(row.iter()) {
             if c.kind() != v.kind() {
                 return Err(InvalidColumn::WrongKind {
-                    column: c.order,
+                    table: format!("{}", self.schema),
+                    column: format!("{}", c),
+                    column_number: c.order,
                     found: v.kind(),
                     wanted: c.kind(),
                 });

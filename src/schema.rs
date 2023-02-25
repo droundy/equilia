@@ -25,7 +25,7 @@ impl Lens for Option<Aggregation> {
 impl From<Option<Aggregation>> for RawValues {
     fn from(a: Option<Aggregation>) -> Self {
         let bytes = match a {
-            None => vec![0; 16],
+            None => vec![b'0'; 16],
             Some(Aggregation::Min(bytes)) => {
                 let mut b = Vec::with_capacity(16);
                 b.push(1);
@@ -80,7 +80,7 @@ pub struct RawColumnSchema {
 ///
 /// This stores both the RawColumnSchema information (which describes the column
 /// itself and how to read it) and where it fits into the TableSchema.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct TableSchemaRow {
     /// The id of the table this belongs to
     table: TableId,
@@ -123,7 +123,7 @@ impl std::fmt::Display for RawColumnSchema {
 }
 
 /// The schema of a table
-#[derive(Clone)]
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TableSchema {
     name: String,
     pub(crate) id: TableId,
@@ -352,6 +352,7 @@ impl IsRow for TableSchemaRow {
         let mut columns = columns.into_iter();
         let table = columns.next().unwrap().read_values().context("table id")?;
         let length = table.len();
+        println!("OOOOOOOOOOOOOOO {length}");
         let mut table = table.into_iter();
         let mut column = columns
             .next()
@@ -472,6 +473,7 @@ pub fn table_schema_schema() -> TableSchema {
     table
 }
 
+#[derive(Debug)]
 pub(crate) struct DbSchemaRow {
     table: TableId,
     created: std::time::SystemTime,
@@ -542,7 +544,9 @@ pub fn save_db_schema(
     let mut table_table = TableBuilder::new(Arc::new(table_schema_schema()));
     let mut db_table = TableBuilder::new(Arc::new(db_schema_schema()));
     for t in tables {
+        println!("I am adding these rows to table {t}");
         for row in t.to_table_rows() {
+            println!("    {row:?}");
             table_table.insert_row(row).unwrap();
         }
         db_table.insert_row(t.to_db_row()).unwrap();
@@ -561,9 +565,21 @@ pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, E
     println!("I have read the table table");
     let mut table_rows: Vec<TableSchemaRow> = table_table.to_rows().context("columns to rows")?;
     table_rows.sort();
+    println!("I found these table rows:");
+    for r in table_rows.iter() {
+        println!("    {r:?}");
+    }
     let mut table_columns: HashMap<TableId, Vec<TableSchemaRow>> = HashMap::new();
     for tr in table_rows.into_iter() {
         table_columns.entry(tr.table).or_default().push(tr);
+    }
+    println!("I found these db rows:");
+    for r in db_table
+        .to_rows::<DbSchemaRow>()
+        .context("tables to rows")?
+        .into_iter()
+    {
+        println!("    {r:?}");
     }
     for db_row in db_table
         .to_rows::<DbSchemaRow>()
@@ -612,8 +628,18 @@ fn save_and_load_schema() {
     println!("\nloading schema\n");
     let schemas = load_db_schema(dir).unwrap();
     println!("\nI have loaded the shcemas!\n");
+    assert_eq!(2, schemas.len());
     assert!(schemas.iter().any(|schema| schema.id == table_schema.id));
     assert!(schemas.iter().any(|schema| schema.id == db_schema.id));
+    let (db, table) = if schemas[0].id == table_schema.id {
+        (schemas[1].clone(), schemas[0].clone())
+    } else {
+        (schemas[0].clone(), schemas[1].clone())
+    };
+    println!("\n{table}\n\n{db}\n\n{db_schema}\n\n");
+    assert_eq!(db, db_schema);
+    println!("\nTHE DB SCHEMA WAS FINE!\n");
+    assert_eq!(table, table_schema);
 }
 
 /// This is the schema for the table that holds the schema of the db itself
@@ -658,8 +684,8 @@ fn format_db_tables() {
             column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order. U64 DEFAULT 0 LENS u64,
             lens. Bytes DEFAULT 'bool____________' LENS __LensId,
-            default.value Bytes DEFAULT '  ' LENS rawvalue,
-            aggregate. Bytes DEFAULT '                ' LENS __Aggregation,
+            default.value Bytes DEFAULT '\000\000' LENS rawvalue,
+            aggregate. Bytes DEFAULT '0000000000000000' LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
             column_name. Bytes DEFAULT '' LENS String,

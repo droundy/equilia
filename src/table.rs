@@ -36,10 +36,17 @@ impl Table {
     ) -> Result<Self, StorageError> {
         let directory: &Path = directory.as_ref();
         let mut columns = Vec::new();
-        for schema in schema.columns() {
-            let path = directory.join(schema.file_name());
-            println!("reading file {path:?} for {schema}");
+        for column_schema in schema.columns() {
+            let path = directory.join(column_schema.file_name());
+            println!("reading file {path:?} for {column_schema}");
             columns.push(RawColumn::open(path)?);
+            let column = columns.last().unwrap();
+            let values = column.clone().read_values().unwrap();
+            println!(
+                "XXXXXXXXXXXXXXXXX found {} values for table {}",
+                values.len(),
+                schema.id
+            );
         }
         println!("Finished reading columns for table {schema}");
         Ok(Table { columns })
@@ -103,6 +110,7 @@ impl TableBuilder {
             }
         }
         self.rows.push(row);
+        println!("{} =====> NUM ROWS IS {}", self.schema.id, self.rows.len());
         Ok(())
     }
 
@@ -115,6 +123,11 @@ impl TableBuilder {
     /// Create the table
     pub fn table(mut self) -> Table {
         self.rows.sort_unstable();
+        let num_rows = self.rows.len();
+        println!(
+            "====== BUILDING TABLE {} with {num_rows} rows",
+            self.schema.id
+        );
         let mut columns = Vec::new();
         for (idx, c) in self.schema.columns().enumerate() {
             match c.kind() {

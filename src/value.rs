@@ -197,11 +197,18 @@ impl std::fmt::Display for RawValue {
             RawValue::Bool(b) => write!(f, "{b:?}"),
             RawValue::U64(n) => write!(f, "{n}"),
             RawValue::Bytes(x) => {
-                if let Ok(s) = std::str::from_utf8(x) {
-                    write!(f, "'{s}'")
-                } else {
-                    write!(f, "{x:?}")
+                fn is_printable(b: u8) -> bool {
+                    b >= 0x20 && b <= 0x7e
                 }
+                f.write_str("'")?;
+                for b in x {
+                    if is_printable(*b) {
+                        write!(f, "{}", *b as char)?;
+                    } else {
+                        write!(f, r"\{b:03}")?;
+                    }
+                }
+                f.write_str("'")
             }
         }
     }

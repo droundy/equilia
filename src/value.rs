@@ -1,3 +1,8 @@
+use crate::{
+    lens::{LensId, RawValues},
+    Lens, LensError,
+};
+
 /// The type of data actually stored in a column.
 ///
 /// This is in distinction from a logical [`Kind`], which might
@@ -14,8 +19,18 @@ pub enum RawKind {
     Bytes,
 }
 
+impl std::fmt::Display for RawKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RawKind::Bool => f.write_str("bool"),
+            RawKind::Bytes => f.write_str("bytes"),
+            RawKind::U64 => f.write_str("u64"),
+        }
+    }
+}
+
 /// A value that could exist in a column
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum RawValue {
     /// A `u64` value
     U64(u64),
@@ -25,6 +40,78 @@ pub enum RawValue {
     Bytes(Vec<u8>),
 }
 
+impl std::fmt::Debug for RawValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(self, f)
+    }
+}
+
+impl TryFrom<RawValues> for RawValue {
+    type Error = LensError;
+    fn try_from(value: RawValues) -> Result<Self, Self::Error> {
+        let badvalue = Err(LensError::InvalidKinds {
+            expected: "a serialized RawValue".to_string(),
+            found: value.clone(),
+            context: Vec::new(),
+        });
+        if let [RawValue::Bytes(b)] = value.0.as_slice() {
+            match b.first() {
+                None => badvalue,
+                Some(0) => {
+                    if b.len() != 2 || b[1] > 1 {
+                        badvalue
+                    } else {
+                        Ok(RawValue::Bool(b[1] == 1))
+                    }
+                }
+                Some(1) => {
+                    if b.len() != 9 {
+                        badvalue
+                    } else {
+                        Ok(RawValue::U64(u64::from_be_bytes(
+                            b[1..9].try_into().unwrap(),
+                        )))
+                    }
+                }
+                Some(2) => Ok(RawValue::Bytes(b[1..].to_vec())),
+                Some(_) => badvalue,
+            }
+        } else {
+            badvalue
+        }
+    }
+}
+impl From<RawValue> for RawValues {
+    fn from(v: RawValue) -> Self {
+        let bytes = match v {
+            RawValue::Bool(b) => vec![0, b as u8],
+            RawValue::U64(v) => {
+                let mut bytes = Vec::with_capacity(9);
+                bytes.push(1);
+                bytes.extend(v.to_be_bytes());
+                bytes
+            }
+            RawValue::Bytes(b) => {
+                let mut bytes = Vec::with_capacity(9);
+                bytes.push(2);
+                bytes.extend(b);
+                bytes
+            }
+        };
+        RawValues(vec![RawValue::Bytes(bytes)])
+    }
+}
+
+impl Lens for RawValue {
+    const RAW_KINDS: &'static [RawKind] = &[RawKind::Bytes];
+
+    const LENS_ID: crate::lens::LensId = LensId(*b"rawvalue________");
+
+    const EXPECTED: &'static str = "a serialized RawValue";
+
+    const NAMES: &'static [&'static str] = &["value"];
+}
+
 impl RawValue {
     /// The `RawKind` of this value
     pub fn kind(&self) -> RawKind {
@@ -32,6 +119,30 @@ impl RawValue {
             RawValue::Bool(_) => RawKind::Bool,
             RawValue::U64(_) => RawKind::U64,
             RawValue::Bytes(_) => RawKind::Bytes,
+        }
+    }
+
+    pub(crate) fn assert_bool(&self) -> bool {
+        if let RawValue::Bool(b) = self {
+            *b
+        } else {
+            panic!("Found {} rather than bool", self.kind());
+        }
+    }
+
+    pub(crate) fn assert_u64(&self) -> u64 {
+        if let RawValue::U64(v) = self {
+            *v
+        } else {
+            panic!("Found {} rather than u64", self.kind());
+        }
+    }
+
+    pub(crate) fn assert_bytes(&self) -> Vec<u8> {
+        if let RawValue::Bytes(v) = self {
+            v.clone()
+        } else {
+            panic!("Found {} rather than bytes", self.kind());
         }
     }
 
@@ -86,11 +197,18 @@ impl std::fmt::Display for RawValue {
             RawValue::Bool(b) => write!(f, "{b:?}"),
             RawValue::U64(n) => write!(f, "{n}"),
             RawValue::Bytes(x) => {
-                if let Ok(s) = std::str::from_utf8(x) {
-                    write!(f, "'{s}'")
-                } else {
-                    write!(f, "{x:?}")
+                fn is_printable(b: u8) -> bool {
+                    b >= 0x20 && b <= 0x7e
                 }
+                f.write_str("'")?;
+                for b in x {
+                    if is_printable(*b) {
+                        write!(f, "{}", *b as char)?;
+                    } else {
+                        write!(f, r"\{b:03}")?;
+                    }
+                }
+                f.write_str("'")
             }
         }
     }

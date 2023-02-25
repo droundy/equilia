@@ -1,45 +1,65 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use crate::column::encoding::StorageError;
 use crate::lens::{ColumnId, Lens, LensId, RawValues, TableId};
-use crate::value::RawValue;
-use crate::LensError;
+use crate::table::IsRow;
+use crate::value::{RawKind, RawValue};
+use crate::{Context, Error, LensError, RawColumn, Table, TableBuilder};
 
 /// A kind of column to aggregate
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u64)]
 pub enum Aggregation {
-    None = 0,
-    Min = 1,
-    Max = 2,
-    Sum = 3,
+    Min([u8; 15]),
+    Max([u8; 15]),
+    Sum,
 }
-impl Lens for Aggregation {
-    const RAW_KINDS: &'static [crate::value::RawKind] = u64::RAW_KINDS;
-    const EXPECTED: &'static str = "An integer indicating which aggregation";
+impl Lens for Option<Aggregation> {
+    const RAW_KINDS: &'static [crate::value::RawKind] = LensId::RAW_KINDS;
+    const EXPECTED: &'static str = "Bytes indicating which aggregation and with what id";
     const LENS_ID: LensId = LensId(*b"__Aggregation___");
     const NAMES: &'static [&'static str] = &[""];
 }
-impl From<Aggregation> for RawValues {
-    fn from(a: Aggregation) -> Self {
-        (a as u64).into()
+impl From<Option<Aggregation>> for RawValues {
+    fn from(a: Option<Aggregation>) -> Self {
+        let bytes = match a {
+            None => vec![b'0'; 16],
+            Some(Aggregation::Min(bytes)) => {
+                let mut b = Vec::with_capacity(16);
+                b.push(1);
+                b.extend(bytes);
+                b
+            }
+            Some(Aggregation::Max(bytes)) => {
+                let mut b = Vec::with_capacity(16);
+                b.push(2);
+                b.extend(bytes);
+                b
+            }
+            Some(Aggregation::Sum) => vec![3; 16],
+        };
+        RawValues(vec![RawValue::Bytes(bytes)])
     }
 }
-impl TryFrom<RawValues> for Aggregation {
+impl TryFrom<RawValues> for Option<Aggregation> {
     type Error = LensError;
     fn try_from(value: RawValues) -> Result<Self, Self::Error> {
-        let v = u64::try_from(value)?;
-        if v == Aggregation::None as u64 {
-            Ok(Aggregation::None)
-        } else if v == Aggregation::Max as u64 {
-            Ok(Aggregation::Max)
-        } else if v == Aggregation::Min as u64 {
-            Ok(Aggregation::Min)
-        } else if v == Aggregation::Sum as u64 {
-            Ok(Aggregation::Sum)
-        } else {
-            Err(LensError::InvalidValue {
-                value: format!("Unexpected: {v}"),
-            })
+        match LensId::try_from(value)?.0 {
+            [b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0'] => {
+                Ok(None)
+            }
+            [1, id @ ..] => Ok(Some(Aggregation::Min(id))),
+            [2, id @ ..] => Ok(Some(Aggregation::Max(id))),
+            [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] => Ok(Some(Aggregation::Sum)),
+            v => {
+                let id = LensId(v);
+                Err(LensError::InvalidValue {
+                    value: format!("Invalid value in aggregation: '{id}'"),
+                    context: Vec::new(),
+                })
+            }
         }
     }
 }
@@ -47,26 +67,51 @@ impl TryFrom<RawValues> for Aggregation {
 /// A schema for a column
 pub struct ColumnSchema<T> {
     default: T,
-    name: &'static str,
+    name: String,
     id: ColumnId,
 }
 
-/// A kind of column to aggregate
+/// The schema of a raw column, including the `LensId` metadata
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RawColumnSchema {
-    default: RawValue,
-    name: &'static str,
+    pub(crate) order: u64,
     id: ColumnId,
-    fieldname: &'static str,
+    default: RawValue,
+    name: String,
     lens: LensId,
 }
+
+/// A row of the table schema
+///
+/// This stores both the RawColumnSchema information (which describes the column
+/// itself and how to read it) and where it fits into the TableSchema.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct ColumnsSchemaRow {
+    /// The id of the table this belongs to
+    table: TableId,
+    /// The id of this column
+    column: ColumnId,
+    /// The order in which this column appears, either in the primary key, or a max/min aggregation.
+    order: u64,
+    /// Is the key primary, or an aggregation, and which kind if it is an aggregation?
+    aggregate: Option<Aggregation>,
+    /// The default value of the column
+    default: RawValue,
+    /// When was this column's name modified?
+    modified: std::time::SystemTime,
+    /// The user-visible name of the column
+    column_name: String,
+    /// The id of the lens for viewing the column
+    lens: LensId,
+}
+
 impl RawColumnSchema {
-    fn display_name(&self) -> String {
-        if self.fieldname.is_empty() {
-            self.name.to_owned()
-        } else {
-            format!("{}.{}", self.name, self.fieldname,)
-        }
+    pub(crate) fn file_name(&self) -> PathBuf {
+        self.id.as_filename()
+    }
+
+    pub(crate) fn kind(&self) -> RawKind {
+        self.default.kind()
     }
 }
 impl std::fmt::Display for RawColumnSchema {
@@ -74,120 +119,174 @@ impl std::fmt::Display for RawColumnSchema {
         write!(
             f,
             "{} {:?} DEFAULT {} LENS {}",
-            self.display_name(),
+            self.name,
             self.default.kind(),
             self.default,
             self.lens,
         )
     }
 }
-/// A compound aggregation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct AggregationId([u8; 16]);
-/// A kind of column to aggregate
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum AggregatingSchema {
-    /// One or more columns, we pick the max of a pair
-    Max {
-        columns: OrderedRawColumns,
-        id: AggregationId,
-    },
-    /// One or more columns, we pick the min of a pair
-    Min {
-        columns: OrderedRawColumns,
-        id: AggregationId,
-    },
-    /// Summing
-    Sum(OrderedRawColumns),
-}
-
-impl AggregatingSchema {
-    fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
-        match self {
-            AggregatingSchema::Max { columns, .. } => columns.iter(),
-            AggregatingSchema::Min { columns, .. } => columns.iter(),
-            AggregatingSchema::Sum(columns) => columns.iter(),
-        }
-    }
-}
-
-type OrderedRawColumns = BTreeSet<(u64, RawColumnSchema)>;
 
 /// The schema of a table
+#[derive(Debug, Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct TableSchema {
-    name: &'static str,
-    id: TableId,
-    primary: OrderedRawColumns, // must all have AggregationNone
-    aggregations: BTreeSet<AggregatingSchema>,
+    name: String,
+    pub(crate) id: TableId,
+    primary: BTreeSet<RawColumnSchema>, // must all have Aggregation = None
+    aggregations: BTreeMap<Aggregation, BTreeSet<RawColumnSchema>>,
 }
 
 impl TableSchema {
     /// Create a new empty table
     pub fn new(name: &'static str) -> Self {
         TableSchema {
-            name,
+            name: name.to_string(),
             id: TableId::new(),
             primary: BTreeSet::new(),
-            aggregations: BTreeSet::new(),
+            aggregations: BTreeMap::new(),
         }
     }
 
     /// Add columns to the primary key
     pub fn add_primary(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
         let first_order = if let Some(o) = self.primary.iter().next_back() {
-            o.0 + 1
+            o.order + 1
         } else {
             0
         };
-        for (o, c) in columns.enumerate() {
-            self.primary.insert((first_order + o as u64, c));
+        for (o, mut c) in columns.enumerate() {
+            if c.order == 0 {
+                c.order = first_order + o as u64;
+            }
+            self.primary.insert(c);
         }
     }
 
     /// Add max aggregating column group
     pub fn add_max(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
-        self.aggregations.insert(AggregatingSchema::Max {
-            columns: columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
-            id: AggregationId(rand::random()),
-        });
+        self.aggregations.insert(
+            Aggregation::Max(rand::random()),
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
+        );
     }
 
     /// Add min aggregating column group
     pub fn add_min(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
-        self.aggregations.insert(AggregatingSchema::Min {
-            columns: columns.enumerate().map(|(o, c)| (o as u64, c)).collect(),
-            id: AggregationId(rand::random()),
-        });
+        self.aggregations.insert(
+            Aggregation::Min(rand::random()),
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
+        );
     }
 
     /// Add summing columns
     pub fn add_sum(&mut self, columns: impl Iterator<Item = RawColumnSchema>) {
-        for c in columns {
-            self.aggregations
-                .insert(AggregatingSchema::Sum([(0, c)].into_iter().collect()));
-        }
+        self.aggregations.insert(
+            Aggregation::Sum,
+            columns
+                .enumerate()
+                .map(|(o, mut c)| {
+                    if c.order == 0 {
+                        c.order = o as u64;
+                    }
+                    c
+                })
+                .collect(),
+        );
     }
 
     /// All the columns
-    fn columns(&self) -> impl Iterator<Item = &(u64, RawColumnSchema)> {
+    pub(crate) fn columns(&self) -> impl Iterator<Item = &RawColumnSchema> {
         self.primary
             .iter()
-            .chain(self.aggregations.iter().flat_map(|a| a.columns()))
+            .chain(self.aggregations.iter().flat_map(|a| a.1.iter()))
+    }
+
+    /// The number of columns
+    pub fn num_columns(&self) -> usize {
+        self.primary.len()
+            + self
+                .aggregations
+                .iter()
+                .map(|(_, c)| c.len())
+                .sum::<usize>()
+    }
+
+    fn to_columns_rows(&self) -> Vec<ColumnsSchemaRow> {
+        let table = self.id;
+        let mut out = Vec::new();
+        for c in self.primary.iter() {
+            out.push(ColumnsSchemaRow {
+                table,
+                column: c.id,
+                lens: c.lens,
+                order: c.order,
+                aggregate: None,
+                modified: std::time::SystemTime::now(),
+                column_name: c.name.to_string(),
+                default: c.default.clone(),
+            })
+        }
+        for (agg, columns) in self.aggregations.iter() {
+            for c in columns.iter() {
+                out.push(ColumnsSchemaRow {
+                    table,
+                    column: c.id,
+                    lens: c.lens,
+                    order: c.order,
+                    aggregate: Some(*agg),
+                    modified: std::time::SystemTime::now(),
+                    column_name: c.name.to_string(),
+                    default: c.default.clone(),
+                })
+            }
+        }
+        out
+    }
+
+    fn to_db_row(&self) -> TablesSchemaRow {
+        TablesSchemaRow {
+            table: self.id,
+            created: std::time::SystemTime::now(),
+            modified: std::time::SystemTime::now(),
+            table_name: self.name.to_string(),
+            is_deleted: false,
+        }
+    }
+
+    /// Create an empty builder for a table.
+    pub fn build(self) -> TableBuilder {
+        TableBuilder::new(Arc::new(self))
     }
 }
 
 impl std::fmt::Display for TableSchema {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "CREATE TABLE {} ID {} {{", self.name, self.id)?;
-        for (_, c) in self.columns() {
+        for c in self.columns() {
             writeln!(f, "    {c},")?;
         }
         column_list("PRIMARY KEY", &self.primary, f)?;
-        for a in self.aggregations.iter() {
+        for (a, columns) in self.aggregations.iter() {
             match a {
-                AggregatingSchema::Max { columns, .. } => column_list("MAX", columns, f)?,
-                AggregatingSchema::Min { columns, .. } => column_list("MIN", columns, f)?,
-                AggregatingSchema::Sum(columns) => column_list("SUM", columns, f)?,
+                Aggregation::Max(_) => column_list("MAX", columns, f)?,
+                Aggregation::Min(_) => column_list("MIN", columns, f)?,
+                Aggregation::Sum => column_list("SUM", columns, f)?,
             }
         }
         writeln!(f, "}};")
@@ -195,14 +294,14 @@ impl std::fmt::Display for TableSchema {
 }
 fn column_list(
     keyword: &str,
-    v: &OrderedRawColumns,
+    v: &BTreeSet<RawColumnSchema>,
     f: &mut std::fmt::Formatter<'_>,
 ) -> std::fmt::Result {
-    let mut columns = v.iter().map(|x| &x.1);
+    let mut columns = v.iter();
     if let Some(c) = columns.next() {
-        write!(f, "    {keyword} ( {}", c.display_name())?;
+        write!(f, "    {keyword} ( {}", c.name)?;
         for c in columns {
-            write!(f, ", {}", c.display_name())?;
+            write!(f, ", {}", c.name)?;
         }
         writeln!(f, " ),")
     } else {
@@ -215,7 +314,7 @@ impl<T: Lens + Default + Clone> ColumnSchema<T> {
     pub fn new(name: &'static str) -> ColumnSchema<T> {
         ColumnSchema {
             default: T::default(),
-            name,
+            name: name.to_string(),
             id: ColumnId::new(),
         }
     }
@@ -225,7 +324,7 @@ impl<T: Lens + Clone> ColumnSchema<T> {
     pub fn with_default(name: &'static str, default: T) -> ColumnSchema<T> {
         ColumnSchema {
             default,
-            name,
+            name: name.to_string(),
             id: ColumnId::new(),
         }
     }
@@ -238,60 +337,304 @@ impl<T: Lens + Clone> ColumnSchema<T> {
     pub fn raw(&self) -> impl Iterator<Item = RawColumnSchema> {
         let vs: RawValues = self.default.clone().into();
         let id = self.id;
-        let name = self.name;
+        let name = self.name.clone();
         vs.0.into_iter()
             .enumerate()
             .map(move |(idx, default)| RawColumnSchema {
-                name,
+                order: 0,
+                name: format!("{}.{}", name, T::NAMES[idx]),
                 default,
                 id,
-                fieldname: T::NAMES[idx],
                 lens: T::LENS_ID,
             })
     }
 }
 
+impl IsRow for ColumnsSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__columns_schema");
+    fn to_raw(self) -> Vec<RawValue> {
+        let mut out = Vec::with_capacity(9);
+        out.extend(RawValues::from(self.table).0);
+        out.extend(RawValues::from(self.column).0);
+        out.extend(RawValues::from(self.order).0);
+        out.extend(RawValues::from(self.lens).0);
+        out.extend(RawValues::from(self.default).0);
+        out.extend(RawValues::from(self.aggregate).0);
+        out.extend(RawValues::from(self.modified).0);
+        out.extend(RawValues::from(self.column_name).0);
+        assert_eq!(out.len(), 9);
+        out
+    }
+    fn from_raw(columns: Vec<RawColumn>) -> Result<Vec<Self>, Error> {
+        let mut columns = columns.into_iter();
+        let table = columns.next().unwrap().read_values().context("table id")?;
+        let length = table.len();
+        let mut table = table.into_iter();
+        let column = columns.next().unwrap().read_values().context("column id")?;
+        assert_eq!(length, column.len());
+        let mut column = column.into_iter();
+        let mut order = columns
+            .next()
+            .unwrap()
+            .read_u64()
+            .context("order")?
+            .into_iter();
+        let mut lens = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("lens id")?
+            .into_iter();
+        let mut default = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("default")?
+            .into_iter();
+        let mut aggregate = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("aggregation")?
+            .into_iter();
+        let mut modified_1 = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("modified seconds")?
+            .into_iter();
+        let mut modified_2 = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("modified subsec")?
+            .into_iter();
+        let mut column_name = columns
+            .next()
+            .unwrap()
+            .read_values()
+            .context("column name")?
+            .into_iter();
+        let mut out = Vec::with_capacity(length);
+        for _ in 0..length {
+            out.push(ColumnsSchemaRow {
+                table: RawValues(vec![table.next().unwrap()])
+                    .try_into()
+                    .context("converting table id")?,
+                column: RawValues(vec![column.next().unwrap()])
+                    .try_into()
+                    .context("converting column id")?,
+                order: order.next().unwrap(),
+                lens: RawValues(vec![lens.next().unwrap()])
+                    .try_into()
+                    .context("converting lens id")?,
+                aggregate: RawValues(vec![aggregate.next().unwrap()]).try_into()?,
+                modified: RawValues(vec![modified_1.next().unwrap(), modified_2.next().unwrap()])
+                    .try_into()?,
+                column_name: RawValues(vec![column_name.next().unwrap()]).try_into()?,
+                default: RawValues(vec![default.next().unwrap()]).try_into()?,
+            });
+        }
+        Ok(out)
+    }
+}
+
 /// This is he schema for the table that holds schemas of tables
-pub fn table_schema_schema() -> TableSchema {
+pub fn columns_schema() -> TableSchema {
     let mut table = TableSchema::new("columns");
-    table.id = TableId::const_new(b"__table_schemas_");
+    table.id = ColumnsSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
-            .with_id(ColumnId::const_new(b"table_id--tables"))
+            .with_id(ColumnId::const_new(b"table_id-columns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("column", ColumnId::const_new(b"COLUMN-NOT-EXIST"))
-            .with_id(ColumnId::const_new(b"column_id-tables"))
+            .with_id(ColumnId::const_new(b"column_idcolumns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("order", 0u64)
-            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .with_id(ColumnId::const_new(b"order----columns"))
             .raw(),
     );
     table.add_primary(
-        ColumnSchema::with_default("aggregate", Aggregation::None)
-            .with_id(ColumnId::const_new(b"column-aggregate"))
+        ColumnSchema::with_default("lens", bool::LENS_ID)
+            .with_id(ColumnId::const_new(b"lens-----columns"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("default", RawValue::Bool(false))
+            .with_id(ColumnId::const_new(b"default--columns"))
+            .raw(),
+    );
+    table.add_primary(
+        ColumnSchema::with_default("aggregate", None)
+            .with_id(ColumnId::const_new(b"aggregatecolumns"))
             .raw(),
     );
     table.add_max(
         ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"modified-column!"))
+            .with_id(ColumnId::const_new(b"modified-columns"))
             .raw()
             .chain(
                 ColumnSchema::with_default("column_name", String::default())
-                    .with_id(ColumnId::const_new(b"name-of-column!!"))
+                    .with_id(ColumnId::const_new(b"column_nacolumns"))
                     .raw(),
             ),
     );
     table
 }
 
+#[derive(Debug)]
+pub(crate) struct TablesSchemaRow {
+    table: TableId,
+    created: std::time::SystemTime,
+    modified: std::time::SystemTime,
+    table_name: String,
+    is_deleted: bool,
+}
+
+impl IsRow for TablesSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__tables_schema_");
+    fn to_raw(self) -> Vec<RawValue> {
+        let mut out = Vec::with_capacity(7);
+        out.extend(RawValues::from(self.table).0);
+        out.extend(RawValues::from(self.created).0);
+        out.extend(RawValues::from(self.modified).0);
+        out.extend(RawValues::from(self.table_name).0);
+        out.extend(RawValues::from(self.is_deleted).0);
+        assert_eq!(out.len(), 7);
+        out
+    }
+    fn from_raw(columns: Vec<RawColumn>) -> Result<Vec<Self>, Error> {
+        let mut columns = columns.into_iter();
+        let table = columns.next().unwrap().read_values()?;
+        let length = table.len();
+        let mut table = table.into_iter();
+        let mut created_1 = columns.next().unwrap().read_values()?.into_iter();
+        let mut created_2 = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_1 = columns.next().unwrap().read_values()?.into_iter();
+        let mut modified_2 = columns.next().unwrap().read_values()?.into_iter();
+        let mut table_name = columns.next().unwrap().read_values()?.into_iter();
+        let mut is_deleted = columns.next().unwrap().read_bools()?.into_iter();
+        let mut out = Vec::with_capacity(table.len());
+        for _ in 0..length {
+            out.push(TablesSchemaRow {
+                table: RawValues(vec![table.next().unwrap()]).try_into()?,
+                created: RawValues(vec![created_1.next().unwrap(), created_2.next().unwrap()])
+                    .try_into()?,
+                modified: RawValues(vec![modified_1.next().unwrap(), modified_2.next().unwrap()])
+                    .try_into()?,
+                table_name: RawValues(vec![table_name.next().unwrap()]).try_into()?,
+                is_deleted: is_deleted.next().unwrap(),
+            });
+        }
+        Ok(out)
+    }
+}
+
+/// Saves the database schema to the requested directory.
+pub fn save_db_schema(
+    tables: Vec<TableSchema>,
+    directory: impl AsRef<Path>,
+) -> Result<(), StorageError> {
+    let mut table_table = TableBuilder::new(Arc::new(columns_schema()));
+    let mut db_table = TableBuilder::new(Arc::new(tables_schema()));
+    for t in tables {
+        for row in t.to_columns_rows() {
+            table_table.insert_row(row).unwrap();
+        }
+        db_table.insert_row(t.to_db_row()).unwrap();
+    }
+    table_table.save(directory.as_ref())?;
+    db_table.save(directory)
+}
+
+/// Reads the dtatabase schema from the requested directory
+pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, Error> {
+    let mut out = Vec::new();
+    let db_schema = Arc::new(tables_schema());
+    let db_table = Table::read(directory.as_ref(), db_schema).context("read tables")?;
+    let columns_schema = Arc::new(columns_schema());
+    let table_table = Table::read(directory, columns_schema).context("read columns")?;
+    let mut table_rows: Vec<ColumnsSchemaRow> = table_table.to_rows().context("columns to rows")?;
+    table_rows.sort();
+    let mut table_columns: HashMap<TableId, Vec<ColumnsSchemaRow>> = HashMap::new();
+    for tr in table_rows.into_iter() {
+        table_columns.entry(tr.table).or_default().push(tr);
+    }
+    for db_row in db_table
+        .to_rows::<TablesSchemaRow>()
+        .context("tables to rows")?
+        .into_iter()
+    {
+        let name = db_row.table_name;
+        let id = db_row.table;
+        let mut primary = BTreeSet::new();
+        let mut aggregations: BTreeMap<Aggregation, BTreeSet<RawColumnSchema>> = BTreeMap::new();
+        for tr in table_columns.remove(&id).unwrap_or_default().into_iter() {
+            let c = RawColumnSchema {
+                order: tr.order,
+                name: tr.column_name,
+                id: tr.column,
+                default: tr.default,
+                lens: tr.lens,
+            };
+            match tr.aggregate {
+                None => {
+                    primary.insert(c);
+                }
+                Some(agg) => {
+                    aggregations.entry(agg).or_default().insert(c);
+                }
+            }
+        }
+
+        out.push(TableSchema {
+            name,
+            id,
+            primary,
+            aggregations,
+        })
+    }
+    Ok(out)
+}
+
+#[test]
+fn save_and_load_schema() {
+    let dir = tempfile::tempdir().unwrap();
+    let columns_schema = columns_schema();
+    let tables_schema = tables_schema();
+    println!("\nsaving schema\n");
+    save_db_schema(
+        vec![columns_schema.clone(), tables_schema.clone()],
+        dir.as_ref(),
+    )
+    .unwrap();
+    println!("\nloading schema\n");
+    let schemas = load_db_schema(dir).unwrap();
+    println!("\nI have loaded the shcemas!\n");
+    assert_eq!(2, schemas.len());
+    assert!(schemas.iter().any(|schema| schema.id == columns_schema.id));
+    assert!(schemas.iter().any(|schema| schema.id == tables_schema.id));
+    let (tables_read, columns_read) = if schemas[0].id == columns_schema.id {
+        (schemas[1].clone(), schemas[0].clone())
+    } else {
+        (schemas[0].clone(), schemas[1].clone())
+    };
+    println!("\n{columns_read}\n\n{columns_schema}\n\n{tables_read}\n\n{tables_schema}\n\n");
+    assert_eq!(tables_read, tables_schema);
+    println!("\nTHE DB SCHEMA WAS FINE!\n");
+    assert_eq!(columns_read, columns_schema);
+}
+
 /// This is the schema for the table that holds the schema of the db itself
-pub fn db_schema_schema() -> TableSchema {
+///
+/// In other words, this table holds the set of tables.
+pub fn tables_schema() -> TableSchema {
     let mut table = TableSchema::new("tables");
-    table.id = TableId::const_new(b"__db_schema_____");
+    table.id = TablesSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
             .with_id(ColumnId::const_new(b"table_id--tables"))
@@ -299,21 +642,21 @@ pub fn db_schema_schema() -> TableSchema {
     );
     table.add_primary(
         ColumnSchema::with_default("created", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"__table_created!"))
+            .with_id(ColumnId::const_new(b"created---tables"))
             .raw(),
     );
     table.add_max(
         ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"modified-table!!"))
+            .with_id(ColumnId::const_new(b"modified--tables"))
             .raw()
             .chain(
                 ColumnSchema::with_default("table_name", String::default())
-                    .with_id(ColumnId::const_new(b"name-of-table!!!"))
+                    .with_id(ColumnId::const_new(b"table_nametables"))
                     .raw(),
             )
             .chain(
                 ColumnSchema::with_default("is_deleted", false)
-                    .with_id(ColumnId::const_new(b"deleted-table!!!"))
+                    .with_id(ColumnId::const_new(b"is_deletedtables"))
                     .raw(),
             ),
     );
@@ -323,32 +666,34 @@ pub fn db_schema_schema() -> TableSchema {
 #[test]
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        CREATE TABLE columns ID __table_schemas {
-            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
-            column Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
-            order U64 DEFAULT 0 LENS u64,
-            aggregate U64 DEFAULT 0 LENS __Aggregation,
+        CREATE TABLE columns ID __columns_schema {
+            table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+            column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
+            order. U64 DEFAULT 0 LENS u64,
+            lens. Bytes DEFAULT 'bool____________' LENS __LensId,
+            default.value Bytes DEFAULT '\000\000' LENS rawvalue,
+            aggregate. Bytes DEFAULT '0000000000000000' LENS __Aggregation,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
-            column_name Bytes DEFAULT '' LENS String,
-            PRIMARY KEY ( table, column, order, aggregate ),
-            MAX ( modified.seconds, modified.subsecond_nanos, column_name ),
+            column_name. Bytes DEFAULT '' LENS String,
+            PRIMARY KEY ( table., column., order., lens., default.value, aggregate. ),
+            MAX ( modified.seconds, modified.subsecond_nanos, column_name. ),
         };
     "#]];
-    expected.assert_eq(table_schema_schema().to_string().as_str());
+    expected.assert_eq(columns_schema().to_string().as_str());
 
     let expected = expect_test::expect![[r#"
-        CREATE TABLE tables ID __db_schema {
-            table Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
+        CREATE TABLE tables ID __tables_schema {
+            table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             created.seconds U64 DEFAULT 0 LENS time::SystemTime,
             created.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
             modified.seconds U64 DEFAULT 0 LENS time::SystemTime,
             modified.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
-            table_name Bytes DEFAULT '' LENS String,
-            is_deleted Bool DEFAULT false LENS bool,
-            PRIMARY KEY ( table, created.seconds, created.subsecond_nanos ),
-            MAX ( modified.seconds, modified.subsecond_nanos, table_name, is_deleted ),
+            table_name. Bytes DEFAULT '' LENS String,
+            is_deleted. Bool DEFAULT false LENS bool,
+            PRIMARY KEY ( table., created.seconds, created.subsecond_nanos ),
+            MAX ( modified.seconds, modified.subsecond_nanos, table_name., is_deleted. ),
         };
     "#]];
-    expected.assert_eq(db_schema_schema().to_string().as_str());
+    expected.assert_eq(tables_schema().to_string().as_str());
 }

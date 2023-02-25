@@ -5,6 +5,8 @@
 use encoding::{ReadEncoded, StorageError};
 use storage::Storage;
 
+use crate::value::RawValue;
+
 use self::encoding::WriteEncoded;
 
 mod boolcolumn;
@@ -16,6 +18,7 @@ pub mod u64_generic;
 pub(crate) use boolcolumn::BoolColumn;
 
 /// A raw column
+#[derive(Clone)]
 pub struct RawColumn {
     inner: RawColumnInner,
 }
@@ -40,16 +43,20 @@ fn run_length_encode<T: PartialEq + Clone>(elems: &[T]) -> Vec<(T, u64)> {
     out
 }
 
-impl From<&[bool]> for RawColumn {
-    fn from(bools: &[bool]) -> Self {
-        RawColumn {
-            inner: RawColumnInner::Bool(BoolColumn::from(bools)),
-        }
+impl RawColumn {
+    pub(crate) fn write_bools<W: WriteEncoded>(
+        f: &mut W,
+        bools: &[bool],
+    ) -> Result<(), StorageError> {
+        BoolColumn::encode(f, run_length_encode(bools).as_slice())
     }
-}
 
-impl From<&[u64]> for RawColumn {
-    fn from(vals: &[u64]) -> Self {
+    pub(crate) fn write_u64<W: WriteEncoded>(
+        out: &mut W,
+        vals: &[u64],
+    ) -> Result<(), StorageError> {
+        let input = run_length_encode(vals);
+        let input = input.as_slice();
         let max = vals.iter().copied().max().unwrap_or_default();
         let min = vals.iter().copied().min().unwrap_or_default();
         let longest_run = run_length_encode(vals)
@@ -57,37 +64,39 @@ impl From<&[u64]> for RawColumn {
             .map(|x| x.1)
             .max()
             .unwrap_or_default();
-        let inner = if max - min > u32::MAX as u64 {
+        if max - min > u32::MAX as u64 {
             if longest_run < 2 {
-                RawColumnInner::U64V1(u64_generic::VariableOne::from(vals))
+                u64_generic::VariableOne::encode(out, input)
             } else {
-                RawColumnInner::U64VV(u64_generic::VariableVariable::from(vals))
+                u64_generic::VariableVariable::encode(out, input)
             }
         } else if max - min > u16::MAX as u64 {
             if longest_run < 2 {
-                RawColumnInner::U64_32_1(u64_generic::U32One::from(vals))
+                u64_generic::U32One::encode(out, input)
             } else {
-                RawColumnInner::U64_32(u64_generic::U32Variable::from(vals))
+                u64_generic::U32Variable::encode(out, input)
             }
         } else if max - min > u8::MAX as u64 {
             if longest_run < 2 {
-                RawColumnInner::U64_16_1(u64_generic::U16One::from(vals))
+                u64_generic::U16One::encode(out, input)
             } else {
-                RawColumnInner::U64_16(u64_generic::U16Variable::from(vals))
+                u64_generic::U16Variable::encode(out, input)
             }
         } else {
             if longest_run < 2 {
-                RawColumnInner::U64_8_1(u64_generic::U8One::from(vals))
+                u64_generic::U8One::encode(out, input)
             } else {
-                RawColumnInner::U64_8(u64_generic::U8Variable::from(vals))
+                u64_generic::U8Variable::encode(out, input)
             }
-        };
-        RawColumn { inner }
+        }
     }
-}
 
-impl From<&[Vec<u8>]> for RawColumn {
-    fn from(vals: &[Vec<u8>]) -> Self {
+    pub(crate) fn write_bytes<W: WriteEncoded>(
+        out: &mut W,
+        vals: &[Vec<u8>],
+    ) -> Result<(), StorageError> {
+        let input = run_length_encode(vals);
+        let input = input.as_slice();
         let longest_run = run_length_encode(vals)
             .into_iter()
             .map(|x| x.1)
@@ -95,20 +104,43 @@ impl From<&[Vec<u8>]> for RawColumn {
             .unwrap_or_default();
         let mx = vals.iter().map(|v| v.len()).max();
         let mn = vals.iter().map(|v| v.len()).min();
-        let inner = if mx == mn {
+        if mx == mn {
             if longest_run == 1 {
-                RawColumnInner::BytesF1V(bytes::F1V::from(vals))
+                bytes::F1V::encode(out, input)
             } else {
-                RawColumnInner::BytesFVV(bytes::FVV::from(vals))
+                bytes::FVV::encode(out, input)
             }
         } else {
             if longest_run == 1 {
-                RawColumnInner::BytesV10(bytes::V10::from(vals))
+                bytes::V10::encode(out, input)
             } else {
-                RawColumnInner::BytesVVV(bytes::VVV::from(vals))
+                bytes::VVV::encode(out, input)
             }
-        };
-        RawColumn { inner }
+        }
+    }
+}
+
+impl From<&[bool]> for RawColumn {
+    fn from(vals: &[bool]) -> Self {
+        let mut bytes: Vec<u8> = Vec::new();
+        RawColumn::write_bools(&mut bytes, vals).unwrap();
+        RawColumn::open_storage(bytes.into()).unwrap()
+    }
+}
+
+impl From<&[u64]> for RawColumn {
+    fn from(vals: &[u64]) -> Self {
+        let mut bytes: Vec<u8> = Vec::new();
+        RawColumn::write_u64(&mut bytes, vals).unwrap();
+        RawColumn::open_storage(bytes.into()).unwrap()
+    }
+}
+
+impl From<&[Vec<u8>]> for RawColumn {
+    fn from(vals: &[Vec<u8>]) -> Self {
+        let mut bytes: Vec<u8> = Vec::new();
+        RawColumn::write_bytes(&mut bytes, vals).unwrap();
+        RawColumn::open_storage(bytes.into()).unwrap()
     }
 }
 
@@ -117,6 +149,35 @@ const U64_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"00u64gen");
 const BYTES_GENERIC_MAGIC: u64 = u64::from_be_bytes(*b"000bytes");
 
 impl RawColumn {
+    /// This isn't what we'll really want to use, but might be useful for now.
+    ///
+    /// It also illustrates how some common logic can be abstracted away into a
+    /// helper function like the `column_to_vec` below.
+    pub fn read_values(&self) -> Result<Vec<RawValue>, StorageError> {
+        match &self.inner {
+            RawColumnInner::Bool(_) => {
+                Ok(self.read_bools()?.into_iter().map(RawValue::Bool).collect())
+            }
+            RawColumnInner::BytesVVV(_)
+            | RawColumnInner::BytesV10(_)
+            | RawColumnInner::BytesFVV(_)
+            | RawColumnInner::BytesF1V(_) => Ok(self
+                .read_bytes()?
+                .into_iter()
+                .map(RawValue::Bytes)
+                .collect()),
+            RawColumnInner::U64VV(_)
+            | RawColumnInner::U64_8(_)
+            | RawColumnInner::U64_8_1(_)
+            | RawColumnInner::U64_16(_)
+            | RawColumnInner::U64_16_1(_)
+            | RawColumnInner::U64_32(_)
+            | RawColumnInner::U64_32_1(_)
+            | RawColumnInner::U64V1(_) => {
+                Ok(self.read_u64()?.into_iter().map(RawValue::U64).collect())
+            }
+        }
+    }
     /// This isn't what we'll really want to use, but might be useful for
     /// testing?
     ///
@@ -229,7 +290,7 @@ impl RawColumn {
             u64_generic::VariableVariable::MAGIC => {
                 RawColumnInner::U64VV(u64_generic::VariableVariable::open(storage)?)
             }
-            _ => return Err(StorageError::BadMagic(magic)),
+            _ => return Err(StorageError::BadMagic(magic, Vec::new())),
         };
         Ok(RawColumn { inner })
     }
@@ -244,6 +305,7 @@ impl TryFrom<std::fs::File> for RawColumn {
 }
 
 fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageError> {
+    let expected_length = column.num_rows();
     let mut out = Vec::new();
     for chunk in column.clone() {
         let chunk = chunk?;
@@ -251,9 +313,11 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
             out.push(chunk.value.clone());
         }
     }
+    assert_eq!(expected_length as usize, out.len());
     Ok(out)
 }
 
+#[derive(Clone)]
 pub(crate) enum RawColumnInner {
     Bool(BoolColumn),
 

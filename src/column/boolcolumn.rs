@@ -78,7 +78,7 @@ impl IsRawColumn for BoolColumn {
         let magic = storage.read_u64()?;
         println!("after magic {}", storage.tell().unwrap());
         if magic != BOOL_MAGIC {
-            return Err(StorageError::BadMagic(magic));
+            return Err(StorageError::BadMagic(magic, Vec::new()));
         }
         let n_rows = storage.read_usigned()?;
         let n_chunks = storage.read_usigned()?;

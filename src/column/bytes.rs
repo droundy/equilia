@@ -34,13 +34,13 @@ impl Format {
     const fn from_bytes(value: u64) -> Result<Self, StorageError> {
         let bytes = value.to_be_bytes();
         let Some(length) = BitWidth::new(bytes[0]) else {
-            return Err(StorageError::OutOfBounds("invalid length bitwidth"));
+            return Err(StorageError::OutOfBounds("invalid length bitwidth", Vec::new()));
         };
         let Some(runlength) = BitWidth::new(bytes[1]) else {
-            return Err(StorageError::OutOfBounds("invalide runlength bitwidth"));
+            return Err(StorageError::OutOfBounds("invalide runlength bitwidth", Vec::new()));
         };
         let Some(prefix) = BitWidth::new(bytes[2]) else {
-            return Err(StorageError::OutOfBounds("invalid prefix bitwidth"));
+            return Err(StorageError::OutOfBounds("invalid prefix bitwidth", Vec::new()));
         };
         Ok(Format {
             length,
@@ -195,7 +195,7 @@ impl<const F: u64> IsRawColumn for Bytes<F> {
             min_l = std::cmp::min(min_l, v.0.len() as u64);
         }
         if max_l - min_l > format.length.max() {
-            return Err(StorageError::OutOfBounds("oops"));
+            return Err(StorageError::OutOfBounds("oops", Vec::new()));
         }
         out.write_u64(min_l)?;
         out.write_bitwidth(format.length, min.len() as u64 - min_l)?;
@@ -222,7 +222,7 @@ impl<const F: u64> IsRawColumn for Bytes<F> {
         let format = Format::from_bytes(F)?;
         let magic = storage.read_u64()?;
         if magic != Self::MAGIC {
-            return Err(StorageError::BadMagic(magic));
+            return Err(StorageError::BadMagic(magic, Vec::new()));
         }
         let n_rows = storage.read_u64()?;
         let n_chunks = storage.read_u64()?;

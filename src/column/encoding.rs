@@ -61,13 +61,38 @@ impl BitWidth {
 pub enum StorageError {
     /// An IO error
     #[error("Io error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(std::io::Error, Vec<String>),
     /// Bad magic
     #[error("Bad magic: {}", pretty_magic(.0))]
-    BadMagic(u64),
+    BadMagic(u64, Vec<String>),
     /// Out of bounds
     #[error("Out of bounds: {0}")]
-    OutOfBounds(&'static str),
+    OutOfBounds(&'static str, Vec<String>),
+}
+
+impl From<std::io::Error> for StorageError {
+    fn from(e: std::io::Error) -> Self {
+        StorageError::Io(e, Vec::new())
+    }
+}
+
+impl crate::Context for StorageError {
+    fn context<S: ToString>(self, context: S) -> Self {
+        match self {
+            StorageError::BadMagic(b, mut c) => {
+                c.push(context.to_string());
+                StorageError::BadMagic(b, c)
+            }
+            StorageError::Io(b, mut c) => {
+                c.push(context.to_string());
+                StorageError::Io(b, c)
+            }
+            StorageError::OutOfBounds(b, mut c) => {
+                c.push(context.to_string());
+                StorageError::OutOfBounds(b, c)
+            }
+        }
+    }
 }
 
 fn pretty_magic(m: &u64) -> String {
@@ -190,14 +215,14 @@ pub trait WriteEncoded: std::io::Write {
         match bitwidth {
             BitWidth::IsOne => {
                 if v != 1 {
-                    Err(StorageError::OutOfBounds("oops"))
+                    Err(StorageError::OutOfBounds("oops", Vec::new()))
                 } else {
                     Ok(())
                 }
             }
             BitWidth::IsZero => {
                 if v != 0 {
-                    Err(StorageError::OutOfBounds("oops"))
+                    Err(StorageError::OutOfBounds("oops", Vec::new()))
                 } else {
                     Ok(())
                 }
@@ -206,21 +231,21 @@ pub trait WriteEncoded: std::io::Write {
                 if let Ok(v) = v.try_into() {
                     self.write_u8(v)
                 } else {
-                    Err(StorageError::OutOfBounds("oops"))
+                    Err(StorageError::OutOfBounds("oops", Vec::new()))
                 }
             }
             BitWidth::U16 => {
                 if let Ok(v) = v.try_into() {
                     self.write_u16(v)
                 } else {
-                    Err(StorageError::OutOfBounds("oops"))
+                    Err(StorageError::OutOfBounds("oops", Vec::new()))
                 }
             }
             BitWidth::U32 => {
                 if let Ok(v) = v.try_into() {
                     self.write_u32(v)
                 } else {
-                    Err(StorageError::OutOfBounds("oops"))
+                    Err(StorageError::OutOfBounds("oops", Vec::new()))
                 }
             }
             BitWidth::U64 => self.write_u64(v),

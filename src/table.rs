@@ -38,17 +38,8 @@ impl Table {
         let mut columns = Vec::new();
         for column_schema in schema.columns() {
             let path = directory.join(column_schema.file_name());
-            println!("reading file {path:?} for {column_schema}");
             columns.push(RawColumn::open(path)?);
-            let column = columns.last().unwrap();
-            let values = column.clone().read_values().unwrap();
-            println!(
-                "XXXXXXXXXXXXXXXXX found {} values for table {}",
-                values.len(),
-                schema.id
-            );
         }
-        println!("Finished reading columns for table {schema}");
         Ok(Table { columns })
     }
 
@@ -88,16 +79,6 @@ impl TableBuilder {
                 wanted: self.schema.num_columns(),
             });
         }
-        // row.reverse();
-        for (c, v) in self.schema.columns().zip(row.iter()) {
-            println!(
-                "{:2} column: {}:   wants {} got {}",
-                c.order,
-                c,
-                c.kind(),
-                v.kind()
-            );
-        }
         for (c, v) in self.schema.columns().zip(row.iter()) {
             if c.kind() != v.kind() {
                 return Err(InvalidColumn::WrongKind {
@@ -110,7 +91,6 @@ impl TableBuilder {
             }
         }
         self.rows.push(row);
-        println!("{} =====> NUM ROWS IS {}", self.schema.id, self.rows.len());
         Ok(())
     }
 
@@ -123,11 +103,6 @@ impl TableBuilder {
     /// Create the table
     pub fn table(mut self) -> Table {
         self.rows.sort_unstable();
-        let num_rows = self.rows.len();
-        println!(
-            "====== BUILDING TABLE {} with {num_rows} rows",
-            self.schema.id
-        );
         let mut columns = Vec::new();
         for (idx, c) in self.schema.columns().enumerate() {
             match c.kind() {

@@ -305,6 +305,7 @@ impl TryFrom<std::fs::File> for RawColumn {
 }
 
 fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageError> {
+    let expected_length = column.num_rows();
     let mut out = Vec::new();
     for chunk in column.clone() {
         let chunk = chunk?;
@@ -312,6 +313,7 @@ fn column_to_vec<C: IsRawColumn>(column: &C) -> Result<Vec<C::Element>, StorageE
             out.push(chunk.value.clone());
         }
     }
+    assert_eq!(expected_length as usize, out.len());
     Ok(out)
 }
 

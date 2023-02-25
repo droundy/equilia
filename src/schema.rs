@@ -9,7 +9,7 @@ use crate::value::{RawKind, RawValue};
 use crate::{Context, Error, LensError, RawColumn, Table, TableBuilder};
 
 /// A kind of column to aggregate
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(u64)]
 pub enum Aggregation {
     Min([u8; 15]),
@@ -47,14 +47,19 @@ impl TryFrom<RawValues> for Option<Aggregation> {
     type Error = LensError;
     fn try_from(value: RawValues) -> Result<Self, Self::Error> {
         match LensId::try_from(value)?.0 {
-            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] => Ok(None),
+            [b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0', b'0'] => {
+                Ok(None)
+            }
             [1, id @ ..] => Ok(Some(Aggregation::Min(id))),
             [2, id @ ..] => Ok(Some(Aggregation::Max(id))),
             [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3] => Ok(Some(Aggregation::Sum)),
-            v => Err(LensError::InvalidValue {
-                value: format!("Unexpected: {v:?}"),
-                context: Vec::new(),
-            }),
+            v => {
+                let id = LensId(v);
+                Err(LensError::InvalidValue {
+                    value: format!("Invalid value in aggregation: '{id}'"),
+                    context: Vec::new(),
+                })
+            }
         }
     }
 }
@@ -81,7 +86,7 @@ pub struct RawColumnSchema {
 /// This stores both the RawColumnSchema information (which describes the column
 /// itself and how to read it) and where it fits into the TableSchema.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct TableSchemaRow {
+pub(crate) struct ColumnsSchemaRow {
     /// The id of the table this belongs to
     table: TableId,
     /// The id of this column
@@ -222,11 +227,11 @@ impl TableSchema {
                 .sum::<usize>()
     }
 
-    fn to_table_rows(&self) -> Vec<TableSchemaRow> {
+    fn to_columns_rows(&self) -> Vec<ColumnsSchemaRow> {
         let table = self.id;
         let mut out = Vec::new();
         for c in self.primary.iter() {
-            out.push(TableSchemaRow {
+            out.push(ColumnsSchemaRow {
                 table,
                 column: c.id,
                 lens: c.lens,
@@ -237,11 +242,25 @@ impl TableSchema {
                 default: c.default.clone(),
             })
         }
+        for (agg, columns) in self.aggregations.iter() {
+            for c in columns.iter() {
+                out.push(ColumnsSchemaRow {
+                    table,
+                    column: c.id,
+                    lens: c.lens,
+                    order: c.order,
+                    aggregate: Some(*agg),
+                    modified: std::time::SystemTime::now(),
+                    column_name: c.name.to_string(),
+                    default: c.default.clone(),
+                })
+            }
+        }
         out
     }
 
-    fn to_db_row(&self) -> DbSchemaRow {
-        DbSchemaRow {
+    fn to_db_row(&self) -> TablesSchemaRow {
+        TablesSchemaRow {
             table: self.id,
             created: std::time::SystemTime::now(),
             modified: std::time::SystemTime::now(),
@@ -331,13 +350,11 @@ impl<T: Lens + Clone> ColumnSchema<T> {
     }
 }
 
-impl IsRow for TableSchemaRow {
-    const TABLE_ID: TableId = TableId::const_new(b"__table_schemas_");
+impl IsRow for ColumnsSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__columns_schema");
     fn to_raw(self) -> Vec<RawValue> {
         let mut out = Vec::with_capacity(9);
         out.extend(RawValues::from(self.table).0);
-        println!("table is {:?}", RawValues::from(self.table).0);
-        println!("column is {:?}", RawValues::from(self.column).0);
         out.extend(RawValues::from(self.column).0);
         out.extend(RawValues::from(self.order).0);
         out.extend(RawValues::from(self.lens).0);
@@ -352,14 +369,10 @@ impl IsRow for TableSchemaRow {
         let mut columns = columns.into_iter();
         let table = columns.next().unwrap().read_values().context("table id")?;
         let length = table.len();
-        println!("OOOOOOOOOOOOOOO {length}");
         let mut table = table.into_iter();
-        let mut column = columns
-            .next()
-            .unwrap()
-            .read_values()
-            .context("column id")?
-            .into_iter();
+        let column = columns.next().unwrap().read_values().context("column id")?;
+        assert_eq!(length, column.len());
+        let mut column = column.into_iter();
         let mut order = columns
             .next()
             .unwrap()
@@ -404,7 +417,7 @@ impl IsRow for TableSchemaRow {
             .into_iter();
         let mut out = Vec::with_capacity(length);
         for _ in 0..length {
-            out.push(TableSchemaRow {
+            out.push(ColumnsSchemaRow {
                 table: RawValues(vec![table.next().unwrap()])
                     .try_into()
                     .context("converting table id")?,
@@ -427,46 +440,46 @@ impl IsRow for TableSchemaRow {
 }
 
 /// This is he schema for the table that holds schemas of tables
-pub fn table_schema_schema() -> TableSchema {
+pub fn columns_schema() -> TableSchema {
     let mut table = TableSchema::new("columns");
-    table.id = TableSchemaRow::TABLE_ID;
+    table.id = ColumnsSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
-            .with_id(ColumnId::const_new(b"table_id--tables"))
+            .with_id(ColumnId::const_new(b"table_id-columns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("column", ColumnId::const_new(b"COLUMN-NOT-EXIST"))
-            .with_id(ColumnId::const_new(b"column_id-tables"))
+            .with_id(ColumnId::const_new(b"column_idcolumns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("order", 0u64)
-            .with_id(ColumnId::const_new(b"column-sortorder"))
+            .with_id(ColumnId::const_new(b"order----columns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("lens", bool::LENS_ID)
-            .with_id(ColumnId::const_new(b"column-lens_____"))
+            .with_id(ColumnId::const_new(b"lens-----columns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("default", RawValue::Bool(false))
-            .with_id(ColumnId::const_new(b"column-default__"))
+            .with_id(ColumnId::const_new(b"default--columns"))
             .raw(),
     );
     table.add_primary(
         ColumnSchema::with_default("aggregate", None)
-            .with_id(ColumnId::const_new(b"column-aggregate"))
+            .with_id(ColumnId::const_new(b"aggregatecolumns"))
             .raw(),
     );
     table.add_max(
         ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"modified-column!"))
+            .with_id(ColumnId::const_new(b"modified-columns"))
             .raw()
             .chain(
                 ColumnSchema::with_default("column_name", String::default())
-                    .with_id(ColumnId::const_new(b"name-of-column!!"))
+                    .with_id(ColumnId::const_new(b"column_nacolumns"))
                     .raw(),
             ),
     );
@@ -474,7 +487,7 @@ pub fn table_schema_schema() -> TableSchema {
 }
 
 #[derive(Debug)]
-pub(crate) struct DbSchemaRow {
+pub(crate) struct TablesSchemaRow {
     table: TableId,
     created: std::time::SystemTime,
     modified: std::time::SystemTime,
@@ -482,8 +495,8 @@ pub(crate) struct DbSchemaRow {
     is_deleted: bool,
 }
 
-impl IsRow for DbSchemaRow {
-    const TABLE_ID: TableId = TableId::const_new(b"__db_schema_____");
+impl IsRow for TablesSchemaRow {
+    const TABLE_ID: TableId = TableId::const_new(b"__tables_schema_");
     fn to_raw(self) -> Vec<RawValue> {
         let mut out = Vec::with_capacity(7);
         out.extend(RawValues::from(self.table).0);
@@ -507,7 +520,7 @@ impl IsRow for DbSchemaRow {
         let mut is_deleted = columns.next().unwrap().read_bools()?.into_iter();
         let mut out = Vec::with_capacity(table.len());
         for _ in 0..length {
-            out.push(DbSchemaRow {
+            out.push(TablesSchemaRow {
                 table: RawValues(vec![table.next().unwrap()]).try_into()?,
                 created: RawValues(vec![created_1.next().unwrap(), created_2.next().unwrap()])
                     .try_into()?,
@@ -518,21 +531,6 @@ impl IsRow for DbSchemaRow {
             });
         }
         Ok(out)
-
-        // let mut values = values.into_iter();
-        // let table = RawValues(vec![values.next().unwrap()]).try_into()?;
-        // let created = RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        // let modified =
-        //     RawValues(vec![values.next().unwrap(), values.next().unwrap()]).try_into()?;
-        // let table_name = RawValues(vec![values.next().unwrap()]).try_into()?;
-        // let is_deleted = RawValues(vec![values.next().unwrap()]).try_into()?;
-        // Ok(DbSchemaRow {
-        //     table,
-        //     created,
-        //     modified,
-        //     table_name,
-        //     is_deleted,
-        // })
     }
 }
 
@@ -541,12 +539,10 @@ pub fn save_db_schema(
     tables: Vec<TableSchema>,
     directory: impl AsRef<Path>,
 ) -> Result<(), StorageError> {
-    let mut table_table = TableBuilder::new(Arc::new(table_schema_schema()));
-    let mut db_table = TableBuilder::new(Arc::new(db_schema_schema()));
+    let mut table_table = TableBuilder::new(Arc::new(columns_schema()));
+    let mut db_table = TableBuilder::new(Arc::new(tables_schema()));
     for t in tables {
-        println!("I am adding these rows to table {t}");
-        for row in t.to_table_rows() {
-            println!("    {row:?}");
+        for row in t.to_columns_rows() {
             table_table.insert_row(row).unwrap();
         }
         db_table.insert_row(t.to_db_row()).unwrap();
@@ -558,31 +554,18 @@ pub fn save_db_schema(
 /// Reads the dtatabase schema from the requested directory
 pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, Error> {
     let mut out = Vec::new();
-    let db_schema = Arc::new(db_schema_schema());
+    let db_schema = Arc::new(tables_schema());
     let db_table = Table::read(directory.as_ref(), db_schema).context("read tables")?;
-    let table_schema = Arc::new(table_schema_schema());
-    let table_table = Table::read(directory, table_schema).context("read columns")?;
-    println!("I have read the table table");
-    let mut table_rows: Vec<TableSchemaRow> = table_table.to_rows().context("columns to rows")?;
+    let columns_schema = Arc::new(columns_schema());
+    let table_table = Table::read(directory, columns_schema).context("read columns")?;
+    let mut table_rows: Vec<ColumnsSchemaRow> = table_table.to_rows().context("columns to rows")?;
     table_rows.sort();
-    println!("I found these table rows:");
-    for r in table_rows.iter() {
-        println!("    {r:?}");
-    }
-    let mut table_columns: HashMap<TableId, Vec<TableSchemaRow>> = HashMap::new();
+    let mut table_columns: HashMap<TableId, Vec<ColumnsSchemaRow>> = HashMap::new();
     for tr in table_rows.into_iter() {
         table_columns.entry(tr.table).or_default().push(tr);
     }
-    println!("I found these db rows:");
-    for r in db_table
-        .to_rows::<DbSchemaRow>()
-        .context("tables to rows")?
-        .into_iter()
-    {
-        println!("    {r:?}");
-    }
     for db_row in db_table
-        .to_rows::<DbSchemaRow>()
+        .to_rows::<TablesSchemaRow>()
         .context("tables to rows")?
         .into_iter()
     {
@@ -621,33 +604,37 @@ pub fn load_db_schema(directory: impl AsRef<Path>) -> Result<Vec<TableSchema>, E
 #[test]
 fn save_and_load_schema() {
     let dir = tempfile::tempdir().unwrap();
-    let table_schema = table_schema_schema();
-    let db_schema = db_schema_schema();
+    let columns_schema = columns_schema();
+    let tables_schema = tables_schema();
     println!("\nsaving schema\n");
-    save_db_schema(vec![table_schema.clone(), db_schema.clone()], dir.as_ref()).unwrap();
+    save_db_schema(
+        vec![columns_schema.clone(), tables_schema.clone()],
+        dir.as_ref(),
+    )
+    .unwrap();
     println!("\nloading schema\n");
     let schemas = load_db_schema(dir).unwrap();
     println!("\nI have loaded the shcemas!\n");
     assert_eq!(2, schemas.len());
-    assert!(schemas.iter().any(|schema| schema.id == table_schema.id));
-    assert!(schemas.iter().any(|schema| schema.id == db_schema.id));
-    let (db, table) = if schemas[0].id == table_schema.id {
+    assert!(schemas.iter().any(|schema| schema.id == columns_schema.id));
+    assert!(schemas.iter().any(|schema| schema.id == tables_schema.id));
+    let (tables_read, columns_read) = if schemas[0].id == columns_schema.id {
         (schemas[1].clone(), schemas[0].clone())
     } else {
         (schemas[0].clone(), schemas[1].clone())
     };
-    println!("\n{table}\n\n{db}\n\n{db_schema}\n\n");
-    assert_eq!(db, db_schema);
+    println!("\n{columns_read}\n\n{columns_schema}\n\n{tables_read}\n\n{tables_schema}\n\n");
+    assert_eq!(tables_read, tables_schema);
     println!("\nTHE DB SCHEMA WAS FINE!\n");
-    assert_eq!(table, table_schema);
+    assert_eq!(columns_read, columns_schema);
 }
 
 /// This is the schema for the table that holds the schema of the db itself
 ///
 /// In other words, this table holds the set of tables.
-pub fn db_schema_schema() -> TableSchema {
+pub fn tables_schema() -> TableSchema {
     let mut table = TableSchema::new("tables");
-    table.id = DbSchemaRow::TABLE_ID;
+    table.id = TablesSchemaRow::TABLE_ID;
     table.add_primary(
         ColumnSchema::with_default("table", TableId::const_new(b"TABLE--NOT-EXIST"))
             .with_id(ColumnId::const_new(b"table_id--tables"))
@@ -655,21 +642,21 @@ pub fn db_schema_schema() -> TableSchema {
     );
     table.add_primary(
         ColumnSchema::with_default("created", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"__table_created!"))
+            .with_id(ColumnId::const_new(b"created---tables"))
             .raw(),
     );
     table.add_max(
         ColumnSchema::with_default("modified", std::time::SystemTime::UNIX_EPOCH)
-            .with_id(ColumnId::const_new(b"modified-table!!"))
+            .with_id(ColumnId::const_new(b"modified--tables"))
             .raw()
             .chain(
                 ColumnSchema::with_default("table_name", String::default())
-                    .with_id(ColumnId::const_new(b"name-of-table!!!"))
+                    .with_id(ColumnId::const_new(b"table_nametables"))
                     .raw(),
             )
             .chain(
                 ColumnSchema::with_default("is_deleted", false)
-                    .with_id(ColumnId::const_new(b"deleted-table!!!"))
+                    .with_id(ColumnId::const_new(b"is_deletedtables"))
                     .raw(),
             ),
     );
@@ -679,7 +666,7 @@ pub fn db_schema_schema() -> TableSchema {
 #[test]
 fn format_db_tables() {
     let expected = expect_test::expect![[r#"
-        CREATE TABLE columns ID __table_schemas {
+        CREATE TABLE columns ID __columns_schema {
             table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             column. Bytes DEFAULT 'COLUMN-NOT-EXIST' LENS __ColumnId,
             order. U64 DEFAULT 0 LENS u64,
@@ -693,10 +680,10 @@ fn format_db_tables() {
             MAX ( modified.seconds, modified.subsecond_nanos, column_name. ),
         };
     "#]];
-    expected.assert_eq(table_schema_schema().to_string().as_str());
+    expected.assert_eq(columns_schema().to_string().as_str());
 
     let expected = expect_test::expect![[r#"
-        CREATE TABLE tables ID __db_schema {
+        CREATE TABLE tables ID __tables_schema {
             table. Bytes DEFAULT 'TABLE--NOT-EXIST' LENS __TableId,
             created.seconds U64 DEFAULT 0 LENS time::SystemTime,
             created.subsecond_nanos U64 DEFAULT 0 LENS time::SystemTime,
@@ -708,5 +695,5 @@ fn format_db_tables() {
             MAX ( modified.seconds, modified.subsecond_nanos, table_name., is_deleted. ),
         };
     "#]];
-    expected.assert_eq(db_schema_schema().to_string().as_str());
+    expected.assert_eq(tables_schema().to_string().as_str());
 }
